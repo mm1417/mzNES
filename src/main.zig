@@ -19,9 +19,9 @@ fn drawTextPattern(
             const index = y * SCREEN_WIDTH + x;
 
             if (((x + frame_count) / 16 + y / 16) % 2 == 0) {
-                buf[index] = 0xFFFF0000;
+                buf[index] = 0xFFFF_0000;
             } else {
-                buf[index] = 0xFF000000;
+                buf[index] = 0xFF00_0000;
             }
         }
     }

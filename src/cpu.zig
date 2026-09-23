@@ -1,6 +1,6 @@
 const std = @import("std");
 const Bus = @import("bus.zig").Bus;
-const STACK_B: u16 = 0x100;
+const STACK_BASE: u16 = 0x100;
 
 const Operation = enum {
     // Load/store
@@ -160,7 +160,7 @@ pub const CPU = struct {
 
     pub fn fetchByte(self: *CPU) u8 {
         const code = self.bus.read(self.pc);
-        self.pc += 1;
+        self.pc +%= 1;
         return code;
     }
 
@@ -171,6 +171,10 @@ pub const CPU = struct {
         return final_addr;
     }
 
+    pub fn getFlag(self: *CPU, flag: u8) bool {
+        return self.status & flag != 0;
+    }
+
     pub fn setFlag(self: *CPU, flag: u8, value: bool) void {
         if (value) {
             self.status |= flag;
@@ -179,20 +183,29 @@ pub const CPU = struct {
         }
     }
 
-    pub fn setFlagZN(self: *CPU) void {
-        self.setFlag(Flags.Zero, self.a == 0);
-        self.setFlag(Flags.Negative, self.a & 0x80 != 0);
+    pub fn setFlagZN(self: *CPU, value: u8) void {
+        self.setFlag(Flags.Zero, value == 0);
+        self.setFlag(Flags.Negative, value & 0x80 != 0);
+    }
+
+    // important!!
+    pub fn setAdcOverflow(self: *CPU, a: u8, m: u8, result: u8) void {
+        self.setFlag(Flags.Overflow, ((a ^ m) & 0x80 == 0) and ((a ^ result) & 0x80 != 0));
+    }
+
+    pub fn setSbcOverflow(self: *CPU, a: u8, m: u8, result: u8) void {
+        self.setFlag(Flags.Overflow, ((a ^ m) & 0x80 != 0) and ((a ^ result) & 0x80 != 0));
     }
 
     pub fn pushStack(self: *CPU, value: u8) void {
-        const sp_addr: u16 = STACK_B + @as(u16, self.sp);
+        const sp_addr: u16 = STACK_BASE + @as(u16, self.sp);
         self.bus.write(sp_addr, value);
         self.sp -%= 1;
     }
 
     pub fn popStack(self: *CPU) u8 {
         self.sp +%= 1;
-        const sp_addr: u16 = STACK_B + @as(u16, self.sp);
+        const sp_addr: u16 = STACK_BASE + @as(u16, self.sp);
         return self.bus.read(sp_addr);
     }
 
@@ -338,25 +351,25 @@ pub const CPU = struct {
                 .cycles = 2,
             },
             0xA4 => .{
-                .operation = .ldY,
+                .operation = .ldy,
                 .mode = .zeropage,
                 .bytes = 2,
                 .cycles = 3,
             },
             0xB4 => .{
-                .operation = .ldY,
+                .operation = .ldy,
                 .mode = .zeropage_x,
                 .bytes = 2,
                 .cycles = 4,
             },
             0xAC => .{
-                .operation = .ldY,
+                .operation = .ldy,
                 .mode = .absolute,
                 .bytes = 3,
                 .cycles = 4,
             },
             0xBC => .{
-                .operation = .ldY,
+                .operation = .ldy,
                 .mode = .absolute_x,
                 .bytes = 3,
                 .cycles = 4,
@@ -585,7 +598,7 @@ pub const CPU = struct {
                 .mode = .absolute_y,
                 .bytes = 3,
                 .cycles = 4,
-                .page_cycle_pennalty = true,
+                .page_cycle_penalty = true,
             },
             0x61 => .{
                 .operation = .adc,
@@ -931,17 +944,17 @@ pub const CPU = struct {
             .lda => {
                 const value = self.bus.read(addr_res.addr);
                 self.a = value;
-                self.setFlagZN();
+                self.setFlagZN(self.a);
             },
             .ldx => {
                 const value = self.bus.read(addr_res.addr);
                 self.x = value;
-                self.setFlagZN();
+                self.setFlagZN(self.x);
             },
             .ldy => {
                 const value = self.bus.read(addr_res.addr);
                 self.y = value;
-                self.setFlagZN();
+                self.setFlagZN(self.y);
             },
 
             // store
@@ -961,23 +974,23 @@ pub const CPU = struct {
             // register
             .tax => {
                 self.x = self.a;
-                self.setFlagZN();
+                self.setFlagZN(self.x);
             },
             .tay => {
                 self.y = self.a;
-                self.setFlagZN();
+                self.setFlagZN(self.y);
             },
             .txa => {
                 self.a = self.x;
-                self.setFlagZN();
+                self.setFlagZN(self.a);
             },
             .tya => {
                 self.a = self.y;
-                self.setFlagZN();
+                self.setFlagZN(self.a);
             },
             .tsx => {
                 self.x = self.sp;
-                self.setFlagZN();
+                self.setFlagZN(self.x);
             },
             .txs => {
                 self.sp = self.x;
@@ -985,20 +998,60 @@ pub const CPU = struct {
 
             // stack
             .pha => self.pushStack(self.a),
-            .php => self.pushStack(self.status),
             .pla => {
                 self.a = self.popStack();
-                self.setFlagZN();
+                self.setFlagZN(self.a);
             },
+            .php => self.pushStack(self.status | Flags.Break | Flags.Unused), // important!! B,U 为 1
             .plp => {
-                self.status = self.popStack();
+                self.status = (self.popStack() & ~Flags.Break) | Flags.Unused; // B 为 0，U 为 1
             },
 
             // arithmetic
-            .adc => {},
+            .adc => {
+                const value = self.bus.read(addr_res.addr);
+                const a_before = self.a;
+                const c_in = if (self.getFlag(Flags.Carry)) 1 else 0;
+                const pre_result = @as(u16, a_before) + @as(u16, value) + c_in;
+
+                self.setFlag(Flags.Carry, pre_result > 0xFF);
+
+                self.a = @truncate(pre_result & 0xFF);
+                self.setAdcOverflow(a_before, value, self.a);
+                self.setFlag(Flags.Zero, self.a == 0);
+                self.setFlag(Flags.Negative, self.a & 0x80 != 0);
+            },
+            .sbc => {
+                const a_before = self.a;
+                const value = self.bus.read(addr_res.addr);
+                const invert_value = ~value; // 取反，再 + C 组成补码
+                const c_in = if (self.getFlag(Flags.Carry)) 1 else 0;
+                const pre_result = @as(u16, a_before) + @as(u16, invert_value) + c_in;
+
+                self.setFlag(Flags.Carry, pre_result > 0xFF);
+
+                self.a = @truncate(pre_result & 0xFF);
+                self.setSbcOverflow(a_before, value, self.a);
+                self.setFlag(Flags.Zero, self.a == 0);
+                self.setFlag(Flags.Negative, self.a & 0x80 != 0);
+            },
+
+            // logic
+            .and_ => {
+                self.a &= self.bus.read(addr_res.addr);
+                self.setFlagZN(self.a);
+            },
+            .ora => {
+                self.a |= self.bus.read(addr_res.addr);
+                self.setFlagZN(self.a);
+            },
+            .eor => {
+                self.a ^= self.bus.read(addr_res.addr);
+                self.setFlagZN(self.a);
+            },
         }
         self.cycles += ins.cycles;
-        if (ins.page_cycle_penalty & addr_res.page_crossed)
+        if (ins.page_cycle_penalty and addr_res.page_crossed)
             self.cycles += 1;
     }
     // -------- OPCODE EXCUTION --------
