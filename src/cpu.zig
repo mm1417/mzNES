@@ -188,11 +188,12 @@ pub const CPU = struct {
         self.setFlag(Flags.Negative, value & 0x80 != 0);
     }
 
-    // important!!
+    // important!! a 与 m 同符号，a 与 result 不同符号
     pub fn setAdcOverflow(self: *CPU, a: u8, m: u8, result: u8) void {
         self.setFlag(Flags.Overflow, ((a ^ m) & 0x80 == 0) and ((a ^ result) & 0x80 != 0));
     }
 
+    // important!! a 与 m 不同符号，a 与 result 不同符号
     pub fn setSbcOverflow(self: *CPU, a: u8, m: u8, result: u8) void {
         self.setFlag(Flags.Overflow, ((a ^ m) & 0x80 != 0) and ((a ^ result) & 0x80 != 0));
     }
@@ -1048,6 +1049,117 @@ pub const CPU = struct {
             .eor => {
                 self.a ^= self.bus.read(addr_res.addr);
                 self.setFlagZN(self.a);
+            },
+
+            // compare
+            .cmp => {
+                const value = self.bus.read(addr_res.addr);
+                const result = self.a -% value;
+                self.setFlag(Flags.Zero, result == 0);
+                self.setFlag(Flags.Carry, self.a >= value);
+                self.setFlag(Flags.Negative, (result & 0x80) != 0);
+            },
+            .cpx => {
+                const value = self.bus.read(addr_res.addr);
+                const result = self.x -% value;
+                self.setFlag(Flags.Zero, result == 0);
+                self.setFlag(Flags.Carry, self.x >= value);
+                self.setFlag(Flags.Negative, (result & 0x80) != 0);
+            },
+            .cpy => {
+                const value = self.bus.read(addr_res.addr);
+                const result = self.y -% value;
+                self.setFlag(Flags.Zero, result == 0);
+                self.setFlag(Flags.Carry, self.y >= value);
+                self.setFlag(Flags.Negative, (result & 0x80) != 0);
+            },
+
+            // increment/decrement
+            .inc => {
+                var value = self.bus.read(addr_res.addr);
+                value = value +% 1;
+                self.bus.write(addr_res.addr, value);
+                self.setFlagZN(value);
+            },
+            .inx => {
+                self.x = self.x +% 1;
+                self.setFlagZN(self.x);
+            },
+            .iny => {
+                self.y = self.y +% 1;
+                self.setFlagZN(self.y);
+            },
+            .dec => {
+                var value = self.bus.read(addr_res.addr);
+                value = value -% 1;
+                self.bus.write(addr_res.addr, value);
+                self.setFlagZN(value);
+            },
+            .dex => {
+                self.x = self.x -% 1;
+                self.setFlagZN(self.x);
+            },
+            .dey => {
+                self.y = self.y -% 1;
+                self.setFlagZN(self.y);
+            },
+
+            // shift
+            .asl => {
+                if (ins.mode == .accumulator) {
+                    self.setFlag(Flags.Carry, (self.a & 0x80) != 0);
+                    self.a = self.a << 1;
+                    self.setFlagZN(self.a);
+                } else {
+                    var value: u8 = self.bus.read(addr_res.addr);
+                    self.setFlag(Flags.Carry, (value & 0x80) != 0);
+                    value = value << 1;
+                    self.setFlagZN(value);
+                    self.bus.write(addr_res.addr, value);
+                }
+            },
+            .lsr => {
+                if (ins.mode == .accumulator) {
+                    self.setFlag(Flags.Carry, (self.a & 0x01) != 0);
+                    self.a = self.a >> 1;
+                    self.setFlagZN(self.a);
+                } else {
+                    var value: u8 = self.bus.read(addr_res.addr);
+                    self.setFlag(Flags.Carry, (value & 0x01) != 0);
+                    value = value >> 1;
+                    self.setFlagZN(value);
+                    self.bus.write(addr_res.addr, value);
+                }
+            },
+            .rol => {
+                if (ins.mode == .accumulator) {
+                    const old_carry: u8 = if (self.getFlag(Flags.Carry)) 1 else 0;
+                    self.setFlag(Flags.Carry, (self.a & 0x80) != 0);
+                    self.a = (self.a << 1) | old_carry;
+                    self.setFlagZN(self.a);
+                } else {
+                    const old_carry: u8 = if (self.getFlag(Flags.Carry)) 1 else 0;
+                    var value: u8 = self.bus.read(addr_res.addr);
+                    self.setFlag(Flags.Carry, (value & 0x80) != 0);
+                    value = (value << 1) | old_carry;
+                    self.setFlagZN(value);
+                    self.bus.write(addr_res.addr, value);
+                }
+            },
+            .ror => {
+                if (ins.mode == .accumulator) {
+                    const old_carry: u8 = if (self.getFlag(Flags.Carry)) 1 else 0;
+                    self.setFlag(Flags.Carry, (self.a & 0x01) != 0);
+                    self.a = (self.a >> 1) | (old_carry << 7);
+                    self.setFlagZN(self.a);
+                } else {
+                    const old_carry: u8 = if (self.getFlag(Flags.Carry)) 1 else 0;
+                    var value: u8 = self.bus.read(addr_res.addr);
+                    self.setFlag(Flags.Carry, (value & 0x01) != 0);
+                    value = (value >> 1) | (old_carry << 7);
+                    self.setFlagZN(value);
+                    self.bus.write(addr_res.addr, value);
+                }
             },
         }
         self.cycles += ins.cycles;
