@@ -934,13 +934,6 @@ pub const CPU = struct {
     pub fn execute(self: *CPU, ins: Instruction) void {
         const addr_res = self.resolveAddrMode(ins.mode);
         switch (ins.operation) {
-            .sei => {
-                self.setFlag(Flags.InterruptDisable, true);
-            },
-            .cld => {
-                self.setFlag(Flags.Decimal, false);
-            },
-
             // load
             .lda => {
                 const value = self.bus.read(addr_res.addr);
@@ -1161,6 +1154,59 @@ pub const CPU = struct {
                     self.bus.write(addr_res.addr, value);
                 }
             },
+
+            // jump
+            .jmp => {
+                self.pc = addr_res.addr;
+            },
+            .jsr => {
+                const return_addr = self.pc -% 1;
+                self.pushStack(@truncate(return_addr >> 8));
+                self.pushStack(@truncate(return_addr));
+                self.pc = addr_res.addr;
+            },
+            .rts => {
+                const pc_value = readU16LE(self.popStack(), self.popStack());
+                self.pc = pc_value +% 1;
+            },
+
+            // branch
+            .bcc => {},
+            .bcs => {},
+            .beq => {},
+            .bmi => {},
+            .bne => {},
+            .bpl => {},
+            .bvc => {},
+            .bvs => {},
+
+            // flags
+            .clc => {
+                self.setFlag(Flags.Carry, false);
+            },
+            .cld => {
+                self.setFlag(Flags.Decimal, false);
+            },
+            .cli => {
+                self.setFlag(Flags.InterruptDisable, false);
+            },
+            .clv => {
+                self.setFlag(Flags.Overflow, false);
+            },
+            .sec => {
+                self.setFlag(Flags.Carry, true);
+            },
+            .sed => {
+                self.setFlag(Flags.Decimal, true);
+            },
+            .sei => {
+                self.setFlag(Flags.InterruptDisable, true);
+            },
+
+            // other
+            .nop => {},
+            .brk => {},
+            .rti => {},
         }
         self.cycles += ins.cycles;
         if (ins.page_cycle_penalty and addr_res.page_crossed)
