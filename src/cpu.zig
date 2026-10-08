@@ -61,10 +61,10 @@ const Operation = enum {
     // Branch
     bcc,
     bcs,
-    beq,
-    bmi,
     bne,
+    beq,
     bpl,
+    bmi,
     bvc,
     bvs,
 
@@ -214,7 +214,7 @@ pub const CPU = struct {
         std.debug.print("{X:0>4}    ", .{pc});
         var i: u8 = 0;
         while (i < ins.bytes) : (i += 1) {
-            std.debug.print("{X:0>2}  ", .{self.bus.read(pc + @as(u16, i))});
+            std.debug.print("{X:0>2}  ", .{self.bus.read(pc +% @as(u16, i))});
         }
 
         std.debug.print(
@@ -824,6 +824,177 @@ pub const CPU = struct {
                 .cycles = 5,
                 .page_cycle_penalty = true,
             },
+
+            // ===== compare =====
+            // cmp
+            0xC9 => .{
+                .operation = .cmp,
+                .mode = .immediate,
+                .bytes = 2,
+                .cycles = 2,
+            },
+            0xC5 => .{
+                .operation = .cmp,
+                .mode = .zeropage,
+                .bytes = 2,
+                .cycles = 3,
+            },
+            0xD5 => .{
+                .operation = .cmp,
+                .mode = .zeropage_x,
+                .bytes = 2,
+                .cycles = 4,
+            },
+            0xCD => .{
+                .operation = .cmp,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 4,
+            },
+            0xDD => .{
+                .operation = .cmp,
+                .mode = .absolute_x,
+                .bytes = 3,
+                .cycles = 4,
+                .page_cycle_penalty = true,
+            },
+            0xD9 => .{
+                .operation = .cmp,
+                .mode = .absolute_y,
+                .bytes = 3,
+                .cycles = 4,
+                .page_cycle_penalty = true,
+            },
+            0xC1 => .{
+                .operation = .cmp,
+                .mode = .indexed_indirect,
+                .bytes = 2,
+                .cycles = 6,
+            },
+            0xD1 => .{
+                .operation = .cmp,
+                .mode = .indirect_indexed,
+                .bytes = 2,
+                .cycles = 5,
+                .page_cycle_penalty = true,
+            },
+            //cpx
+            0xE0 => .{
+                .operation = .cpx,
+                .mode = .immediate,
+                .bytes = 2,
+                .cycles = 2,
+            },
+            0xE4 => .{
+                .operation = .cpx,
+                .mode = .zeropage,
+                .bytes = 2,
+                .cycles = 3,
+            },
+            0xEC => .{
+                .operation = .cpx,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 4,
+            },
+            //cpy
+            0xC0 => .{
+                .operation = .cpy,
+                .mode = .immediate,
+                .bytes = 2,
+                .cycles = 2,
+            },
+            0xC4 => .{
+                .operation = .cpy,
+                .mode = .zeropage,
+                .bytes = 2,
+                .cycles = 3,
+            },
+            0xCC => .{
+                .operation = .cpy,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 4,
+            },
+            // ===== in/de crement =====
+            // inc
+            0xE6 => .{
+                .operation = .inc,
+                .mode = .zeropage,
+                .bytes = 2,
+                .cycles = 5,
+            },
+            0xF6 => .{
+                .operation = .inc,
+                .mode = .zeropage_x,
+                .bytes = 2,
+                .cycles = 6,
+            },
+            0xEE => .{
+                .operation = .inc,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 6,
+            },
+            0xFE => .{
+                .operation = .inc,
+                .mode = .absolute_x,
+                .bytes = 3,
+                .cycles = 7,
+            },
+            //inx
+            0xE8 => .{
+                .operation = .inx,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            //iny
+            0xC8 => .{
+                .operation = .iny,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            // dec
+            0xC6 => .{
+                .operation = .dec,
+                .mode = .zeropage,
+                .bytes = 2,
+                .cycles = 5,
+            },
+            0xD6 => .{
+                .operation = .dec,
+                .mode = .zeropage_x,
+                .bytes = 2,
+                .cycles = 6,
+            },
+            0xCE => .{
+                .operation = .dec,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 6,
+            },
+            0xDE => .{
+                .operation = .dec,
+                .mode = .absolute_x,
+                .bytes = 3,
+                .cycles = 7,
+            },
+            //dex
+            0xCA => .{
+                .operation = .dex,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            //dey
+            0x88 => .{
+                .operation = .dey,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
             else => error.UnknownOperation,
         };
     }
@@ -837,7 +1008,7 @@ pub const CPU = struct {
 
             .immediate => blk: {
                 const final_addr = self.pc;
-                self.pc += 1;
+                self.pc +%= 1;
                 break :blk .{ .addr = final_addr };
             },
 
@@ -1171,14 +1342,54 @@ pub const CPU = struct {
             },
 
             // branch
-            .bcc => {},
-            .bcs => {},
-            .beq => {},
-            .bmi => {},
-            .bne => {},
-            .bpl => {},
-            .bvc => {},
-            .bvs => {},
+            .bcc => {
+                if (!self.getFlag(Flags.Carry)) {
+                    self.pc = addr_res.addr;
+                    self.cycles += 1;
+                }
+            },
+            .bcs => {
+                if (self.getFlag(Flags.Carry)) {
+                    self.pc = addr_res.addr;
+                    self.cycles += 1;
+                }
+            },
+            .bne => {
+                if (!self.getFlag(Flags.Zero)) {
+                    self.pc = addr_res.addr;
+                    self.cycles += 1;
+                }
+            },
+            .beq => {
+                if (self.getFlag(Flags.Zero)) {
+                    self.pc = addr_res.addr;
+                    self.cycles += 1;
+                }
+            },
+            .bpl => {
+                if (!self.getFlag(Flags.Negative)) {
+                    self.pc = addr_res.addr;
+                    self.cycles += 1;
+                }
+            },
+            .bmi => {
+                if (self.getFlag(Flags.Negative)) {
+                    self.pc = addr_res.addr;
+                    self.cycles += 1;
+                }
+            },
+            .bvc => {
+                if (!self.getFlag(Flags.Overflow)) {
+                    self.pc = addr_res.addr;
+                    self.cycles += 1;
+                }
+            },
+            .bvs => {
+                if (self.getFlag(Flags.Overflow)) {
+                    self.pc = addr_res.addr;
+                    self.cycles += 1;
+                }
+            },
 
             // flags
             .clc => {
