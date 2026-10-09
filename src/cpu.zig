@@ -79,6 +79,7 @@ const Operation = enum {
 
     // Other
     nop,
+    bit,
     brk,
     rti,
 };
@@ -245,20 +246,6 @@ pub const CPU = struct {
     // ======== OPCODE TABLE ========
     pub fn decode(opcode: u8) !Instruction {
         return switch (opcode) {
-            0x78 => .{
-                .operation = .sei,
-                .mode = .implied,
-                .bytes = 1,
-                .cycles = 2,
-            },
-
-            0xD8 => .{
-                .operation = .cld,
-                .mode = .implied,
-                .bytes = 1,
-                .cycles = 2,
-            },
-
             // ===== load =====
             // LDA
             0xA9 => .{
@@ -498,34 +485,6 @@ pub const CPU = struct {
             // TYA
             0x98 => .{
                 .operation = .tya,
-                .mode = .implied,
-                .bytes = 1,
-                .cycles = 2,
-            },
-            // INX
-            0xE8 => .{
-                .operation = .inx,
-                .mode = .implied,
-                .bytes = 1,
-                .cycles = 2,
-            },
-            // INY
-            0xC8 => .{
-                .operation = .iny,
-                .mode = .implied,
-                .bytes = 1,
-                .cycles = 2,
-            },
-            // DEX
-            0xCA => .{
-                .operation = .dex,
-                .mode = .implied,
-                .bytes = 1,
-                .cycles = 2,
-            },
-            // DEY
-            0x88 => .{
-                .operation = .dey,
                 .mode = .implied,
                 .bytes = 1,
                 .cycles = 2,
@@ -916,6 +875,7 @@ pub const CPU = struct {
                 .bytes = 3,
                 .cycles = 4,
             },
+
             // ===== in/de crement =====
             // inc
             0xE6 => .{
@@ -994,6 +954,306 @@ pub const CPU = struct {
                 .mode = .implied,
                 .bytes = 1,
                 .cycles = 2,
+            },
+
+            // ===== shift =====
+            // asl
+            0x0A => .{
+                .operation = .asl,
+                .mode = .accumulator,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            0x06 => .{
+                .operation = .asl,
+                .mode = .zeropage,
+                .bytes = 2,
+                .cycles = 5,
+            },
+            0x16 => .{
+                .operation = .asl,
+                .mode = .zeropage_x,
+                .bytes = 2,
+                .cycles = 6,
+            },
+            0x0E => .{
+                .operation = .asl,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 6,
+            },
+            0x1E => .{
+                .operation = .asl,
+                .mode = .absolute_x,
+                .bytes = 3,
+                .cycles = 7,
+            },
+            // lsr
+            0x4A => .{
+                .operation = .lsr,
+                .mode = .accumulator,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            0x46 => .{
+                .operation = .lsr,
+                .mode = .zeropage,
+                .bytes = 2,
+                .cycles = 5,
+            },
+            0x56 => .{
+                .operation = .lsr,
+                .mode = .zeropage_x,
+                .bytes = 2,
+                .cycles = 6,
+            },
+            0x4E => .{
+                .operation = .lsr,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 6,
+            },
+            0x5E => .{
+                .operation = .lsr,
+                .mode = .absolute_x,
+                .bytes = 3,
+                .cycles = 7,
+            },
+            // rol
+            0x2A => .{
+                .operation = .rol,
+                .mode = .accumulator,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            0x26 => .{
+                .operation = .rol,
+                .mode = .zeropage,
+                .bytes = 2,
+                .cycles = 5,
+            },
+            0x36 => .{
+                .operation = .rol,
+                .mode = .zeropage_x,
+                .bytes = 2,
+                .cycles = 6,
+            },
+            0x2E => .{
+                .operation = .rol,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 6,
+            },
+            0x3E => .{
+                .operation = .rol,
+                .mode = .absolute_x,
+                .bytes = 3,
+                .cycles = 7,
+            },
+            // ror
+            0x6A => .{
+                .operation = .ror,
+                .mode = .accumulator,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            0x66 => .{
+                .operation = .ror,
+                .mode = .zeropage,
+                .bytes = 2,
+                .cycles = 5,
+            },
+            0x76 => .{
+                .operation = .ror,
+                .mode = .zeropage_x,
+                .bytes = 2,
+                .cycles = 6,
+            },
+            0x6E => .{
+                .operation = .ror,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 6,
+            },
+            0x7E => .{
+                .operation = .ror,
+                .mode = .absolute_x,
+                .bytes = 3,
+                .cycles = 7,
+            },
+
+            // ===== jump =====
+            // jmp
+            0x4C => .{
+                .operation = .jmp,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 3,
+            },
+            0x6C => .{
+                .operation = .jmp,
+                .mode = .indirect,
+                .bytes = 3,
+                .cycles = 5,
+            },
+            // jsr
+            0x20 => .{
+                .operation = .jsr,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 6,
+            },
+            // rts
+            0x60 => .{
+                .operation = .rts,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 6,
+            },
+
+            // ===== branch =====
+            // bcc
+            0x90 => .{
+                .operation = .bcc,
+                .mode = .relative,
+                .bytes = 2,
+                .cycles = 2,
+            },
+            // bcs
+            0xB0 => .{
+                .operation = .bcs,
+                .mode = .relative,
+                .bytes = 2,
+                .cycles = 2,
+            },
+            // bne
+            0xD0 => .{
+                .operation = .bne,
+                .mode = .relative,
+                .bytes = 2,
+                .cycles = 2,
+            },
+            // beq
+            0xF0 => .{
+                .operation = .beq,
+                .mode = .relative,
+                .bytes = 2,
+                .cycles = 2,
+            },
+            // bpl
+            0x10 => .{
+                .operation = .bpl,
+                .mode = .relative,
+                .bytes = 2,
+                .cycles = 2,
+            },
+            // bmi
+            0x30 => .{
+                .operation = .bmi,
+                .mode = .relative,
+                .bytes = 2,
+                .cycles = 2,
+            },
+            // bvc
+            0x50 => .{
+                .operation = .bvc,
+                .mode = .relative,
+                .bytes = 2,
+                .cycles = 2,
+            },
+            // bvs
+            0x70 => .{
+                .operation = .bvs,
+                .mode = .relative,
+                .bytes = 2,
+                .cycles = 2,
+            },
+
+            // ===== flags =====
+            // clc
+            0x18 => .{
+                .operation = .clc,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            // cld
+            0xD8 => .{
+                .operation = .cld,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            // cli
+            0x58 => .{
+                .operation = .cli,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            // clv
+            0xB8 => .{
+                .operation = .clv,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            // sec
+            0x38 => .{
+                .operation = .sec,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            // sed
+            0xF8 => .{
+                .operation = .sed,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            // sei
+            0x78 => .{
+                .operation = .sei,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+
+            // ===== other =====
+            // nop
+            0xEA => .{
+                .operation = .nop,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 2,
+            },
+            // bit
+            0x24 => .{
+                .operation = .bit,
+                .mode = .zeropage,
+                .bytes = 2,
+                .cycles = 3,
+            },
+            0x2C => .{
+                .operation = .bit,
+                .mode = .absolute,
+                .bytes = 3,
+                .cycles = 4,
+            },
+            // brk
+            0x00 => .{
+                .operation = .brk,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 7,
+            },
+            // rti
+            0x40 => .{
+                .operation = .rti,
+                .mode = .implied,
+                .bytes = 1,
+                .cycles = 6,
             },
             else => error.UnknownOperation,
         };
@@ -1331,6 +1591,7 @@ pub const CPU = struct {
                 self.pc = addr_res.addr;
             },
             .jsr => {
+                // 6502 的特殊行为，jsr的pc-1，而rts的pc+1
                 const return_addr = self.pc -% 1;
                 self.pushStack(@truncate(return_addr >> 8));
                 self.pushStack(@truncate(return_addr));
@@ -1346,48 +1607,80 @@ pub const CPU = struct {
                 if (!self.getFlag(Flags.Carry)) {
                     self.pc = addr_res.addr;
                     self.cycles += 1;
+
+                    if (addr_res.page_crossed) {
+                        self.cycles += 1;
+                    }
                 }
             },
             .bcs => {
                 if (self.getFlag(Flags.Carry)) {
                     self.pc = addr_res.addr;
                     self.cycles += 1;
+
+                    if (addr_res.page_crossed) {
+                        self.cycles += 1;
+                    }
                 }
             },
             .bne => {
                 if (!self.getFlag(Flags.Zero)) {
                     self.pc = addr_res.addr;
                     self.cycles += 1;
+
+                    if (addr_res.page_crossed) {
+                        self.cycles += 1;
+                    }
                 }
             },
             .beq => {
                 if (self.getFlag(Flags.Zero)) {
                     self.pc = addr_res.addr;
                     self.cycles += 1;
+
+                    if (addr_res.page_crossed) {
+                        self.cycles += 1;
+                    }
                 }
             },
             .bpl => {
                 if (!self.getFlag(Flags.Negative)) {
                     self.pc = addr_res.addr;
                     self.cycles += 1;
+
+                    if (addr_res.page_crossed) {
+                        self.cycles += 1;
+                    }
                 }
             },
             .bmi => {
                 if (self.getFlag(Flags.Negative)) {
                     self.pc = addr_res.addr;
                     self.cycles += 1;
+
+                    if (addr_res.page_crossed) {
+                        self.cycles += 1;
+                    }
                 }
             },
             .bvc => {
                 if (!self.getFlag(Flags.Overflow)) {
                     self.pc = addr_res.addr;
                     self.cycles += 1;
+
+                    if (addr_res.page_crossed) {
+                        self.cycles += 1;
+                    }
                 }
             },
             .bvs => {
                 if (self.getFlag(Flags.Overflow)) {
                     self.pc = addr_res.addr;
                     self.cycles += 1;
+
+                    if (addr_res.page_crossed) {
+                        self.cycles += 1;
+                    }
                 }
             },
 
@@ -1416,8 +1709,31 @@ pub const CPU = struct {
 
             // other
             .nop => {},
-            .brk => {},
-            .rti => {},
+            .bit => {
+                const value = self.bus.read(addr_res.addr);
+                self.setFlag(Flags.Zero, (self.a & value) == 0);
+                self.setFlag(Flags.Negative, (value & 0x80) != 0);
+                self.setFlag(Flags.Overflow, (value & 0x40) != 0);
+            },
+            .brk => {
+                const return_addr = self.pc +% 1;
+                // push high, then push low
+                self.pushStack(@truncate(return_addr >> 8));
+                self.pushStack(@truncate(return_addr));
+                // set Brake and Unused before push
+                self.pushStack(self.status | Flags.Break | Flags.Unused);
+                // set I bit
+                self.setFlag(Flags.InterruptDisable, true);
+                const low_addr = self.bus.read(0xFFFE);
+                const high_addr = self.bus.read(0xFFFF);
+                self.pc = readU16LE(low_addr, high_addr);
+            },
+            .rti => {
+                self.status = (self.popStack() & ~Flags.Break) | Flags.Unused;
+                const low_addr = self.popStack();
+                const high_addr = self.popStack();
+                self.pc = readU16LE(low_addr, high_addr);
+            },
         }
         self.cycles += ins.cycles;
         if (ins.page_cycle_penalty and addr_res.page_crossed)
