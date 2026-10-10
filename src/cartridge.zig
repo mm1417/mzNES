@@ -1,5 +1,6 @@
 const std = @import("std");
-const MAPPER0_MASK: u16 = 0x8000;
+const MAPPER0_MASK: u16 = 0xC000;
+// const MAPPER0_MASK: u16 = 0x8000;
 
 pub const Mirroring = enum {
     horizontal,

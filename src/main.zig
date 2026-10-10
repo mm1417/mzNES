@@ -29,15 +29,15 @@ fn drawTextPattern(
 
 // ======== MAIN ========
 pub fn main(init: std.process.Init) !void {
-    var cart = try cartridge.loadCartridge(init.io, init.gpa, "roms/SMB.nes");
+    var cart = try cartridge.loadCartridge(init.io, init.gpa, "roms/nestest.nes");
     defer cart.deinit(init.gpa);
 
     var bus = bus_mod.Bus.init(&cart);
     var cpu = cpu_mod.CPU.init(&bus);
     cpu.reset();
-    try cpu.step();
-    try cpu.step();
-    try cpu.step();
+    for (0..10) |_| {
+        try cpu.step();
+    }
 
     std.debug.print("PC: {X:0>4}\n", .{cpu.pc});
     std.debug.print("A: {X:0>4}\n", .{cpu.a});

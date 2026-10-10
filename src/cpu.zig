@@ -140,23 +140,32 @@ pub const CPU = struct {
     bus: *Bus,
 
     pub fn init(bus: *Bus) CPU {
+        const reset_low = bus.read(0xFFFC);
+        const reset_high = bus.read(0xFFFD);
+        _ = readU16LE(reset_low, reset_high);
+
         return .{
             .a = 0,
             .x = 0,
             .y = 0,
-            .sp = 0,
-            .pc = 0,
-            .status = 0,
-            .cycles = 0,
+            .sp = 0xFD,
+            .pc = 0xC000,
+            .status = 0 | Flags.InterruptDisable | Flags.Unused,
+            .cycles = 7,
             .bus = bus,
         };
     }
 
     pub fn reset(self: *CPU) void {
+        self.a = 0;
+        self.x = 0;
+        self.y = 0;
+        self.sp = 0xFD;
+        self.status = 0 | Flags.InterruptDisable | Flags.Unused;
         const reset_low = self.bus.read(0xFFFC);
         const reset_high = self.bus.read(0xFFFD);
-        const reset_addr = readU16LE(reset_low, reset_high);
-        self.pc = reset_addr;
+        _ = readU16LE(reset_low, reset_high);
+        self.pc = 0xC000;
     }
 
     pub fn fetchByte(self: *CPU) u8 {
@@ -1436,7 +1445,7 @@ pub const CPU = struct {
             .adc => {
                 const value = self.bus.read(addr_res.addr);
                 const a_before = self.a;
-                const c_in = if (self.getFlag(Flags.Carry)) 1 else 0;
+                const c_in: u16 = if (self.getFlag(Flags.Carry)) 1 else 0;
                 const pre_result = @as(u16, a_before) + @as(u16, value) + c_in;
 
                 self.setFlag(Flags.Carry, pre_result > 0xFF);
@@ -1450,7 +1459,7 @@ pub const CPU = struct {
                 const a_before = self.a;
                 const value = self.bus.read(addr_res.addr);
                 const invert_value = ~value; // 取反，再 + C 组成补码
-                const c_in = if (self.getFlag(Flags.Carry)) 1 else 0;
+                const c_in: u16 = if (self.getFlag(Flags.Carry)) 1 else 0;
                 const pre_result = @as(u16, a_before) + @as(u16, invert_value) + c_in;
 
                 self.setFlag(Flags.Carry, pre_result > 0xFF);
@@ -1745,4 +1754,20 @@ pub const CPU = struct {
 pub fn readU16LE(low: u8, high: u8) u16 {
     const temp: u16 = (@as(u16, high) << 8) | (@as(u16, low));
     return temp;
+}
+
+test "scan opcode table" {
+    var item: u16 = 0;
+    var known_code: u16 = 0;
+    var unknown: u16 = 0;
+
+    while (item <= 0xFF) : (item += 1) {
+        if (CPU.decode(@intCast(item))) |_| {
+            known_code += 1;
+        } else |_| {
+            unknown += 1;
+            std.debug.print("unknown code: {X:0>2}\n", .{item});
+        }
+    }
+    std.debug.print("known code: {d}\nunknown: {d}\n", .{ known_code, unknown });
 }
