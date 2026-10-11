@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
     var bus = bus_mod.Bus.init(&cart);
     var cpu = cpu_mod.CPU.init(&bus);
     cpu.reset();
-    for (0..10) |_| {
+    for (0..100) |_| {
         try cpu.step();
     }
 

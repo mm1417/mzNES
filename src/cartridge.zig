@@ -1,6 +1,4 @@
 const std = @import("std");
-const MAPPER0_MASK: u16 = 0xC000;
-// const MAPPER0_MASK: u16 = 0x8000;
 
 pub const Mirroring = enum {
     horizontal,
@@ -24,9 +22,15 @@ pub const Cartridge = struct {
     mirroring: Mirroring,
 
     pub fn cpuRead(self: *const Cartridge, addr: u16) u8 {
+        const offset = addr - 0x8000;
         // 切换不同mapper
         switch (self.mapper) {
-            0 => return self.prg_rom[addr - MAPPER0_MASK],
+            // select 16KB and 32KB
+            0 => return switch (self.prg_rom.len) {
+                0x4000 => self.prg_rom[offset % 0x4000], // 取模，取余数，绕回
+                0x8000 => self.prg_rom[offset],
+                else => unreachable,
+            },
 
             else => unreachable,
         }
