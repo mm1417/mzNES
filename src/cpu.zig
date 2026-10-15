@@ -149,9 +149,9 @@ pub const CPU = struct {
             .x = 0,
             .y = 0,
             .sp = 0xFD,
-            .pc = 0xC000,
+            .pc = 0x0000,
             .status = 0 | Flags.InterruptDisable | Flags.Unused,
-            .cycles = 7,
+            .cycles = 0,
             .bus = bus,
         };
     }
@@ -165,7 +165,7 @@ pub const CPU = struct {
         const reset_low = self.bus.read(0xFFFC);
         const reset_high = self.bus.read(0xFFFD);
         _ = readU16LE(reset_low, reset_high);
-        self.pc = 0xC000;
+        self.pc = 0x0000;
     }
 
     pub fn fetchByte(self: *CPU) u8 {
@@ -245,9 +245,11 @@ pub const CPU = struct {
         const pc_before = self.pc;
 
         const code = self.fetchByte();
-        const ins = try decode(code);
-
-        self.trace(pc_before, ins);
+        const ins = decode(code) catch |err| {
+            std.debug.print("DECODE FAILED: PC=${X:0>4}, OPCODE=${X:0>2}, CYC:{d}\n", .{ pc_before, code, self.cycles });
+            return err;
+        };
+        // self.trace(pc_before, ins);
 
         self.execute(ins);
     }
@@ -1756,18 +1758,18 @@ pub fn readU16LE(low: u8, high: u8) u16 {
     return temp;
 }
 
-test "scan opcode table" {
-    var item: u16 = 0;
-    var known_code: u16 = 0;
-    var unknown: u16 = 0;
+// test "scan opcode table" {
+//     var item: u16 = 0;
+//     var known_code: u16 = 0;
+//     var unknown: u16 = 0;
 
-    while (item <= 0xFF) : (item += 1) {
-        if (CPU.decode(@intCast(item))) |_| {
-            known_code += 1;
-        } else |_| {
-            unknown += 1;
-            std.debug.print("unknown code: {X:0>2}\n", .{item});
-        }
-    }
-    std.debug.print("known code: {d}\nunknown: {d}\n", .{ known_code, unknown });
-}
+//     while (item <= 0xFF) : (item += 1) {
+//         if (CPU.decode(@intCast(item))) |_| {
+//             known_code += 1;
+//         } else |_| {
+//             unknown += 1;
+//             std.debug.print("unknown code: {X:0>2}\n", .{item});
+//         }
+//     }
+//     std.debug.print("known code: {d}\nunknown: {d}\n", .{ known_code, unknown });
+// }

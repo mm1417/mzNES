@@ -27,20 +27,32 @@ fn drawTextPattern(
     }
 }
 
+fn decodeTile(tile: []const u8) void {
+    const low_plane = tile[0..8];
+    const high_plane = tile[8..16];
+    var result: [8][8]u8 = undefined;
+
+    for (0..8) |y| {
+        for (0..8) |x| {
+            const bit: u3 = @intCast(7 - x);
+            const lo: u1 = @truncate((low_plane[y] >> bit) & 0x1);
+            const hi: u1 = @truncate((high_plane[y] >> bit) & 0x1);
+            result[y][x] = (@as(u8, hi) << 1) | @as(u8, lo);
+        }
+    }
+    std.debug.print("{any}\n", .{result});
+}
+
 // ======== MAIN ========
 pub fn main(init: std.process.Init) !void {
-    var cart = try cartridge.loadCartridge(init.io, init.gpa, "roms/nestest.nes");
+    var cart = try cartridge.loadCartridge(init.io, init.gpa, "roms/SMB.nes");
     defer cart.deinit(init.gpa);
 
     var bus = bus_mod.Bus.init(&cart);
     var cpu = cpu_mod.CPU.init(&bus);
     cpu.reset();
-    for (0..100) |_| {
-        try cpu.step();
-    }
-
-    std.debug.print("PC: {X:0>4}\n", .{cpu.pc});
-    std.debug.print("A: {X:0>4}\n", .{cpu.a});
+    const chr_exam: []const u8 = bus.cartridge.chr_rom;
+    decodeTile(chr_exam);
 
     // ======== 初始化SDL ========
     if (!sdl.SDL_Init(sdl.SDL_INIT_VIDEO)) {
