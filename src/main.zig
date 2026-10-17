@@ -24,27 +24,48 @@ fn drawTextPattern(buf: []u32, frame_count: u32) void {
     }
 }
 
-fn decodeTile(tile: []const u8) void {
-    const times = tile.len / 16;
+// fn drawTile(buf: []u8) void {}
+
+fn decodeTile(tile: []const u8) [64 * 512]u32 {
+    const tile_count = tile.len / 16;
+    var flat_arr: [64 * 512]u3 = undefined;
+    var color_arr: [64 * 512]u32 = undefined;
+
+    const TILE_PER_ROW = 32; // 一行32个tile
+
     var i: usize = 0;
-    while (i < times) : (i += 1) {
+    while (i < tile_count) : (i += 1) {
+        const tile_x = i % TILE_PER_ROW;
+        const tile_y = i / TILE_PER_ROW;
+
         const lo_start = i * 16;
         const hi_start = lo_start + 8;
-
         const low_plane = tile[lo_start..hi_start];
         const high_plane = tile[hi_start .. hi_start + 8];
-        var result: [8][8]u8 = undefined;
 
         for (0..8) |y| {
             for (0..8) |x| {
                 const bit: u3 = @intCast(7 - x);
                 const lo: u1 = @truncate((low_plane[y] >> bit) & 0x1);
                 const hi: u1 = @truncate((high_plane[y] >> bit) & 0x1);
-                result[y][x] = (@as(u8, hi) << 1) | @as(u8, lo);
+
+                const px = tile_x * 8 + x;
+                const py = tile_y * 8 + y;
+                flat_arr[py * 256 + px] = (@as(u3, hi) << 1) | @as(u3, lo);
             }
         }
-        std.debug.print("{any}\n", .{result});
     }
+
+    for (0..flat_arr.len) |v| {
+        switch (flat_arr[v]) {
+            1 => color_arr[v] = 0xFF54_5454,
+            0 => color_arr[v] = 0xFF00_0000,
+            2 => color_arr[v] = 0xFF98_9898,
+            3 => color_arr[v] = 0xFFEC_ECEC,
+            else => {},
+        }
+    }
+    return color_arr;
 }
 
 // ======== MAIN ========
@@ -58,7 +79,7 @@ pub fn main(init: std.process.Init) !void {
     const chr_exam: []const u8 = bus.cartridge.chr_rom;
     // std.debug.print("{any}", .{chr_exam});
     // std.debug.dumpHex(chr_exam);
-    decodeTile(chr_exam);
+    const tile = decodeTile(chr_exam);
 
     // ======== 初始化SDL ========
     if (!sdl.SDL_Init(sdl.SDL_INIT_VIDEO)) {
@@ -66,7 +87,7 @@ pub fn main(init: std.process.Init) !void {
     }
     defer sdl.SDL_Quit();
 
-    const window = sdl.SDL_CreateWindow("zmNES", 768, 720, 0) orelse return error.SDLCreateWindowFailed;
+    const window = sdl.SDL_CreateWindow("zmNES", 512, 256, 0) orelse return error.SDLCreateWindowFailed;
     defer sdl.SDL_DestroyWindow(window);
 
     const renderer = sdl.SDL_CreateRenderer(window, null) orelse return error.SDLCreateRendererFailed;
@@ -77,7 +98,7 @@ pub fn main(init: std.process.Init) !void {
         sdl.SDL_PIXELFORMAT_ARGB8888,
         sdl.SDL_TEXTUREACCESS_STREAMING,
         SCREEN_WIDTH,
-        SCREEN_HEIGHT,
+        128,
     ) orelse return error.SDLCreateTextureFailed;
     defer sdl.SDL_DestroyTexture(texture);
 
@@ -99,10 +120,9 @@ pub fn main(init: std.process.Init) !void {
 
         // -------- SDL event --------
         // _ = sdl.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-        drawTextPattern(&framebuffer, frame);
-        frame += 1;
-        _ = sdl.SDL_UpdateTexture(texture, null, &framebuffer, SCREEN_WIDTH * @sizeOf(u32));
-
+        // drawTextPattern(&framebuffer, frame);
+        // frame += 1;
+        _ = sdl.SDL_UpdateTexture(texture, null, &tile, SCREEN_WIDTH * @sizeOf(u32));
         _ = sdl.SDL_RenderClear(renderer);
         _ = sdl.SDL_RenderTexture(renderer, texture, null, null);
         _ = sdl.SDL_RenderPresent(renderer);
