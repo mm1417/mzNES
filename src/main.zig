@@ -10,10 +10,7 @@ const SCREEN_HEIGHT: u16 = 240;
 var framebuffer: [SCREEN_HEIGHT * SCREEN_WIDTH]u32 = undefined;
 var frame: u32 = 0;
 
-fn drawTextPattern(
-    buf: []u32,
-    frame_count: u32,
-) void {
+fn drawTextPattern(buf: []u32, frame_count: u32) void {
     for (0..SCREEN_HEIGHT) |y| {
         for (0..SCREEN_WIDTH) |x| {
             const index = y * SCREEN_WIDTH + x;
@@ -28,19 +25,26 @@ fn drawTextPattern(
 }
 
 fn decodeTile(tile: []const u8) void {
-    const low_plane = tile[0..8];
-    const high_plane = tile[8..16];
-    var result: [8][8]u8 = undefined;
+    const times = tile.len / 16;
+    var i: usize = 0;
+    while (i < times) : (i += 1) {
+        const lo_start = i * 16;
+        const hi_start = lo_start + 8;
 
-    for (0..8) |y| {
-        for (0..8) |x| {
-            const bit: u3 = @intCast(7 - x);
-            const lo: u1 = @truncate((low_plane[y] >> bit) & 0x1);
-            const hi: u1 = @truncate((high_plane[y] >> bit) & 0x1);
-            result[y][x] = (@as(u8, hi) << 1) | @as(u8, lo);
+        const low_plane = tile[lo_start..hi_start];
+        const high_plane = tile[hi_start .. hi_start + 8];
+        var result: [8][8]u8 = undefined;
+
+        for (0..8) |y| {
+            for (0..8) |x| {
+                const bit: u3 = @intCast(7 - x);
+                const lo: u1 = @truncate((low_plane[y] >> bit) & 0x1);
+                const hi: u1 = @truncate((high_plane[y] >> bit) & 0x1);
+                result[y][x] = (@as(u8, hi) << 1) | @as(u8, lo);
+            }
         }
+        std.debug.print("{any}\n", .{result});
     }
-    std.debug.print("{any}\n", .{result});
 }
 
 // ======== MAIN ========
@@ -52,6 +56,8 @@ pub fn main(init: std.process.Init) !void {
     var cpu = cpu_mod.CPU.init(&bus);
     cpu.reset();
     const chr_exam: []const u8 = bus.cartridge.chr_rom;
+    // std.debug.print("{any}", .{chr_exam});
+    // std.debug.dumpHex(chr_exam);
     decodeTile(chr_exam);
 
     // ======== 初始化SDL ========
