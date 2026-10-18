@@ -36,6 +36,10 @@ pub const Cartridge = struct {
         }
     }
 
+    pub fn ppuRead(self: *const Cartridge, addr: u16) u8 {
+        return self.chr_rom[addr];
+    }
+
     pub fn deinit(self: Cartridge, allocator: std.mem.Allocator) void {
         allocator.free(self.prg_rom);
         allocator.free(self.chr_rom);

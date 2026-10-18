@@ -1,6 +1,7 @@
 const std = @import("std");
 const bus_mod = @import("bus.zig");
 const cpu_mod = @import("cpu.zig");
+const ppu_mod = @import("ppu.zig");
 const sdl = @import("sdl.zig");
 const cartridge = @import("cartridge.zig");
 
@@ -75,6 +76,9 @@ pub fn main(init: std.process.Init) !void {
 
     var bus = bus_mod.Bus.init(&cart);
     var cpu = cpu_mod.CPU.init(&bus);
+    var ppu = ppu_mod.PPU.init(&cart);
+    _ = ppu.read(1);
+
     cpu.reset();
     const chr_exam: []const u8 = bus.cartridge.chr_rom;
     // std.debug.print("{any}", .{chr_exam});
@@ -87,7 +91,7 @@ pub fn main(init: std.process.Init) !void {
     }
     defer sdl.SDL_Quit();
 
-    const window = sdl.SDL_CreateWindow("zmNES", 512, 256, 0) orelse return error.SDLCreateWindowFailed;
+    const window = sdl.SDL_CreateWindow("zmNES", 768, 720, 0) orelse return error.SDLCreateWindowFailed;
     defer sdl.SDL_DestroyWindow(window);
 
     const renderer = sdl.SDL_CreateRenderer(window, null) orelse return error.SDLCreateRendererFailed;
@@ -122,9 +126,19 @@ pub fn main(init: std.process.Init) !void {
         // _ = sdl.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
         // drawTextPattern(&framebuffer, frame);
         // frame += 1;
+
+        // !!IMPORTANT!! 数据类型必须是f32！
+        const DST = struct {
+            x: f32 = 10,
+            y: f32 = 10,
+            w: f32 = 256 * 2,
+            h: f32 = 128 * 2,
+        };
+        const dst = DST{};
+
         _ = sdl.SDL_UpdateTexture(texture, null, &tile, SCREEN_WIDTH * @sizeOf(u32));
         _ = sdl.SDL_RenderClear(renderer);
-        _ = sdl.SDL_RenderTexture(renderer, texture, null, null);
+        _ = sdl.SDL_RenderTexture(renderer, texture, null, &dst);
         _ = sdl.SDL_RenderPresent(renderer);
 
         sdl.SDL_Delay(16);
