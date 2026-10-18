@@ -50,6 +50,16 @@ test "ppu read" {
     for (0..8) |addr| {
         const a: u16 = @intCast(addr);
         const value = ppu.read(a);
-        std.debug.print("0x{X:0>2} ", .{value});
+        std.debug.print("0x{X:0>2}\n", .{value});
     }
+
+    ppu.write(0x2000, 0xAA);
+    var v1 = ppu.read(0x2000);
+    var v2 = ppu.read(0x2800);
+    std.debug.print("0x2000 is: {X:0>2}\n0x2800 is: {X:0>2}\n", .{ v1, v2 });
+
+    ppu.write(0x2400, 0xBB);
+    v1 = ppu.read(0x2400);
+    v2 = ppu.read(0x2C00);
+    std.debug.print("0x2400 is: {X:0>2}\n0x2C00 is: {X:0>2}\n", .{ v1, v2 });
 }
