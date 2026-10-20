@@ -1,45 +1,88 @@
 const cartridge_mod = @import("cartridge.zig");
-const VER_MASK: u16 = 0x07FF; // 2KB
-const HOR_MASK: u16 = 0x03FF; // 1KB
+
+const VER_MASK: u16 = 0x07FF; // 2Kb
+const HOR_MASK: u16 = 0x03FF; // 1Kb
 const HOR_OFFSET: u16 = 0x0400;
 const PALETTE_OFFSET: u16 = 0x3F00;
-const PALETTE_MASK: u16 = 0x001F;
+const PALETTE_MASK: u16 = 0x001F; // 32bytes
+const MEM_MAP_8MASK: u8 = 0x3F;
+const MEM_MAP_16MASK: u16 = 0x3FFF;
 
 pub const PPU = struct {
-    data: [2048]u8 = undefined,
+    vram: [2048]u8 = undefined,
     palette: [32]u8 = undefined,
     cartridge: *const cartridge_mod.Cartridge,
+
+    vram_addr: u16 = 0,
+    vram_addr_hi: u8 = 0,
+    vram_addr_lo: u8 = 0,
+    vram_step: u8 = 1,
+    addr_latch: bool = false,
 
     pub fn init(ctrd: *const cartridge_mod.Cartridge) PPU {
         var ppu = PPU{
             .cartridge = ctrd,
         };
-        @memset(&ppu.data, 0);
+        @memset(&ppu.vram, 0);
         @memset(&ppu.palette, 0);
         return ppu;
     }
 
-    pub fn read(self: *const PPU, addr: u16) u8 {
+    fn read(self: *const PPU, addr: u16) u8 {
         const re_addr = resolve_addr(self, addr);
         switch (addr) {
             0x0000...0x1FFF => return self.cartridge.ppuRead(re_addr),
-            0x2000...0x3EFF => return self.data[re_addr],
+            0x2000...0x3EFF => return self.vram[re_addr],
             0x3F00...0x3FFF => return self.palette[re_addr],
             else => return 0,
         }
     }
 
-    pub fn write(self: *PPU, addr: u16, value: u8) void {
+    fn write(self: *PPU, addr: u16, value: u8) void {
         const re_addr = resolve_addr(self, addr);
         switch (addr) {
-            0x2000...0x3EFF => self.data[re_addr] = value,
+            0x2000...0x3EFF => self.vram[re_addr] = value,
             0x3F00...0x3FFF => self.palette[re_addr] = value,
+            else => {},
+        }
+    }
+
+    // 给BUS的外部API
+    pub fn cpuRead(self: *PPU, addr: u16) u8 {
+        switch (addr) {
+            0x2007 => {
+                const value = self.read(self.vram_addr);
+                self.vram_addr +%= self.vram_step;
+                self.vram_addr &= MEM_MAP_16MASK;
+                return value;
+            },
+            else => return 0,
+        }
+    }
+
+    pub fn cpuWrite(self: *PPU, addr: u16, value: u8) void {
+        switch (addr) {
+            0x2006 => {
+                if (self.addr_latch == false) {
+                    self.vram_addr_hi = value & MEM_MAP_8MASK;
+                    self.addr_latch = true;
+                } else {
+                    self.vram_addr_lo = value;
+                    self.addr_latch = false;
+                }
+                self.vram_addr = (@as(u16, self.vram_addr_hi) << 8) | (@as(u16, self.vram_addr_lo));
+            },
+            0x2007 => {
+                self.write(self.vram_addr, value);
+                self.vram_addr +%= self.vram_step;
+                self.vram_addr &= MEM_MAP_16MASK;
+            },
             else => {},
         }
     }
 };
 
-pub fn resolve_addr(ppu: *const PPU, addr: u16) u16 {
+fn resolve_addr(ppu: *const PPU, addr: u16) u16 {
     switch (addr) {
         0x0000...0x1FFF => return addr,
         0x2000...0x2FFF => {

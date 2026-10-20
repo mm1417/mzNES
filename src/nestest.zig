@@ -63,3 +63,26 @@ test "ppu read" {
     v2 = ppu.read(0x2C00);
     std.debug.print("0x2400 is: {X:0>2}\n0x2C00 is: {X:0>2}\n", .{ v1, v2 });
 }
+
+test "ppu reg" {
+    // create allocator
+    const allocator = std.testing.allocator;
+    // create IO
+    var threaded: std.Io.Threaded = .init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var cart = try cartridge.loadCartridge(io, allocator, "roms/SMB.nes");
+    defer cart.deinit(allocator);
+    var bus = bus_mod.Bus.init(&cart);
+
+    bus.write(0x2006, 0x3F);
+    bus.write(0x2006, 0x00);
+    bus.write(0x2007, 0x0F);
+    // 每次读写2007，地址会自动加一，需要重新定位内存地址
+    bus.write(0x200E, 0x3F);
+    bus.write(0x200E, 0x00);
+
+    std.debug.print("{X:0>2}\n", .{bus.ppu.vram_addr});
+    try std.testing.expectEqual(@as(u8, 0x0F), bus.read(0x2007));
+}
