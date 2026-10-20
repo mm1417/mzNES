@@ -1,10 +1,10 @@
 # mzNES
 
-A lightweight, educational Nintendo Entertainment System (NES) emulator written in **Zig 0.16.0** + **SDL3**.  
+A lightweight, educational Nintendo Entertainment System (NES) emulator written in **Zig 0.17.0** + **SDL3**.  
   
 Project started: `Sep.1.2026`  
 
-[![Zig Version](https://img.shields.io/badge/Zig-0.16.0-orange.svg)](https://ziglang.org/)
+[![Zig Version](https://img.shields.io/badge/Zig-0.17.0-orange.svg)](https://ziglang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 
