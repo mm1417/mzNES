@@ -10,8 +10,13 @@ const MEM_MAP_16MASK: u16 = 0x3FFF;
 
 pub const PPU = struct {
     vram: [2048]u8 = undefined,
-    palette: [32]u8 = undefined,
+    palette_ram: [32]u8 = undefined,
     cartridge: *const cartridge_mod.Cartridge,
+
+    ctrl: u8 = 0,
+    ctrl_s: u8 = 0b0000_0100,
+    mask: u8 = 0,
+    status: u8 = 0,
 
     vram_addr: u16 = 0,
     vram_addr_hi: u8 = 0,
@@ -24,7 +29,7 @@ pub const PPU = struct {
             .cartridge = ctrd,
         };
         @memset(&ppu.vram, 0);
-        @memset(&ppu.palette, 0);
+        @memset(&ppu.palette_ram, 0);
         return ppu;
     }
 
@@ -33,7 +38,7 @@ pub const PPU = struct {
         switch (addr) {
             0x0000...0x1FFF => return self.cartridge.ppuRead(re_addr),
             0x2000...0x3EFF => return self.vram[re_addr],
-            0x3F00...0x3FFF => return self.palette[re_addr],
+            0x3F00...0x3FFF => return self.palette_ram[re_addr],
             else => return 0,
         }
     }
@@ -42,7 +47,7 @@ pub const PPU = struct {
         const re_addr = resolve_addr(self, addr);
         switch (addr) {
             0x2000...0x3EFF => self.vram[re_addr] = value,
-            0x3F00...0x3FFF => self.palette[re_addr] = value,
+            0x3F00...0x3FFF => self.palette_ram[re_addr] = value,
             else => {},
         }
     }
@@ -62,6 +67,15 @@ pub const PPU = struct {
 
     pub fn cpuWrite(self: *PPU, addr: u16, value: u8) void {
         switch (addr) {
+            0x2000 => {
+                self.ctrl = value;
+                if (self.ctrl & self.ctrl_s != 0) {
+                    self.vram_step = 32;
+                } else {
+                    self.vram_step = 1;
+                }
+            },
+            0x2001 => {},
             0x2006 => {
                 if (self.addr_latch == false) {
                     self.vram_addr_hi = value & MEM_MAP_8MASK;
