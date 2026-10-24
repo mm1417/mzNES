@@ -8,7 +8,7 @@ const cartridge = @import("cartridge.zig");
 const SCREEN_WIDTH: u16 = 256;
 const SCREEN_HEIGHT: u16 = 240;
 
-var framebuffer: [SCREEN_HEIGHT * SCREEN_WIDTH]u32 = undefined;
+var framebuffer: [SCREEN_WIDTH * SCREEN_HEIGHT]u32 = undefined;
 var frame: u32 = 0;
 
 fn drawTextPattern(buf: []u32, frame_count: u32) void {
@@ -27,7 +27,7 @@ fn drawTextPattern(buf: []u32, frame_count: u32) void {
 
 // fn drawTile(buf: []u8) void {}
 
-fn decodeTile(tile: []const u8) [64 * 512]u32 {
+fn showTileMap(tile: []const u8) [64 * 512]u32 {
     const tile_count = tile.len / 16;
     var flat_arr: [64 * 512]u3 = undefined;
     var color_arr: [64 * 512]u32 = undefined;
@@ -76,14 +76,12 @@ pub fn main(init: std.process.Init) !void {
 
     var bus = bus_mod.Bus.init(&cart);
     var cpu = cpu_mod.CPU.init(&bus);
-    var ppu = ppu_mod.PPU.init(&cart);
-    _ = ppu.read(1);
 
     cpu.reset();
     const chr_exam: []const u8 = bus.cartridge.chr_rom;
     // std.debug.print("{any}", .{chr_exam});
     // std.debug.dumpHex(chr_exam);
-    const tile = decodeTile(chr_exam);
+    const tile = showTileMap(chr_exam);
 
     // ======== 初始化SDL ========
     if (!sdl.SDL_Init(sdl.SDL_INIT_VIDEO)) {
@@ -131,8 +129,8 @@ pub fn main(init: std.process.Init) !void {
         const DST = struct {
             x: f32 = 10,
             y: f32 = 10,
-            w: f32 = 256 * 2,
-            h: f32 = 128 * 2,
+            w: f32 = 256 * 2.5,
+            h: f32 = 128 * 2.5,
         };
         const dst = DST{};
 
