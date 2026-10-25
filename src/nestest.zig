@@ -100,12 +100,16 @@ test "ppu reg" {
 
     std.debug.print("address is {X:0>2}\n", .{bus.ppu.ppu_addr});
     bus.write(0x2007, 0x11);
-    std.debug.print("address is {X:0>2}\n", .{bus.ppu.ppu_addr});
+    std.debug.print("address is {X:0>2}\n=====\n", .{bus.ppu.ppu_addr});
     bus.write(0x2007, 0x22);
 
     bus.write(0x2006, 0x20);
     bus.write(0x2006, 0x00);
+    std.debug.print("address is {X:0>2}\n", .{bus.ppu.ppu_addr});
     try std.testing.expectEqual(@as(u8, 0x00), bus.read(0x2007));
+    std.debug.print("address is {X:0>2}\n", .{bus.ppu.ppu_addr});
     try std.testing.expectEqual(@as(u8, 0x11), bus.read(0x2007));
+    std.debug.print("address is {X:0>2}\n", .{bus.ppu.ppu_addr});
     try std.testing.expectEqual(@as(u8, 0x22), bus.read(0x2007));
+    std.debug.print("address is {X:0>2}\n", .{bus.ppu.ppu_addr});
 }

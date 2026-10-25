@@ -172,50 +172,60 @@ fn resolve_addr(ppu: *const PPU, addr: u16) u16 {
 }
 
 fn decodeTile(tile: []const u8) [8 * 8]u32 {
-    var flat_arr: [8 * 8]u3 = undefined;
+    const low_plane = tile[0..8];
+    const high_plane = tile[8..16];
     var color_arr: [8 * 8]u32 = undefined;
-
-    const lo_start = 0;
-    const hi_start = lo_start + 8;
-    const low_plane = tile[lo_start..hi_start];
-    const high_plane = tile[hi_start .. hi_start + 8];
 
     for (0..8) |y| {
         for (0..8) |x| {
             const bit: u3 = @intCast(7 - x);
             const lo: u1 = @truncate((low_plane[y] >> bit) & 0x1);
             const hi: u1 = @truncate((high_plane[y] >> bit) & 0x1);
-            flat_arr[y * 8 + x] = (@as(u3, hi) << 1) | @as(u3, lo);
-        }
-    }
+            const pixel = (@as(u3, hi) << 1) | @as(u3, lo);
+            const index = y * 8 + x;
 
-    for (0..flat_arr.len) |v| {
-        switch (flat_arr[v]) {
-            1 => color_arr[v] = 0xFF54_5454,
-            0 => color_arr[v] = 0xFF00_0000,
-            2 => color_arr[v] = 0xFF98_9898,
-            3 => color_arr[v] = 0xFFEC_ECEC,
-            else => {},
+            color_arr[index] = switch (pixel) {
+                0 => 0xFF00_0000,
+                1 => 0xFF54_5454,
+                2 => 0xFF98_9898,
+                3 => 0xFFEC_ECEC,
+                else => unreachable,
+            };
         }
     }
     return color_arr;
 }
 
-fn renderBackground(ppu: *PPU, fb: *[256 * 240]u32) void {
-    bus.write(0x2006, 0x20);
-    bus.write(0x2006, 0x00);
+pub fn renderBackground(ppu: *const PPU, fb: *[256 * 240]u32) void {
     for (0..30) |tile_y| {
         for (0..32) |tile_x| {
-            const tile_index = bus.read(0x2007);
+            // 1. Nametalbe中找到tile编号
+            const nt_addr: u16 = 0x2000 + @as(u16, @intCast(tile_y * 32 + tile_x));
+            const tile_index = ppu.readRam(nt_addr);
+
+            // 2. PPUCTRL bit4 决定Pattern Table
             const pattern_base: u16 = @as(u16, (ppu.ctrl >> 4) & 0x1) * 0x1000;
-            const tile_addr = pattern_base + tile_index * 16;
+
+            // 3. 找到tile的16 bytes
+            const tile_addr: u16 = pattern_base + tile_index * 16;
 
             var tile_arr: [16]u8 = undefined;
             for (0..16) |i| {
-                tile_arr[i] = bus.cartridge.ppuRead(tile_addr + i);
+                // i是usize类型，@as不做类型检查！！！
+                tile_arr[i] = ppu.readRam(tile_addr + @as(u16, @intCast(i)));
             }
             const tile_color = decodeTile(&tile_arr);
-            fb = tile_color;
+
+            // 4. 转换数组
+            for (0..8) |pixel_y| {
+                for (0..8) |pixel_x| {
+                    const screen_x = tile_x * 8 + pixel_x;
+                    const screen_y = tile_y * 8 + pixel_y;
+                    const fb_index = screen_y * 256 + screen_x;
+                    const arr_index = pixel_y * 8 + pixel_x;
+                    fb[fb_index] = tile_color[arr_index];
+                }
+            }
         }
     }
 }
