@@ -12,7 +12,7 @@ This project is built to learning, not for perfect NES emulation.
 The goal is to understand how the NES works by implementing the core parts of an emulator step by step.
 The project will focus on basic functionality only, with mapper support limited to: Mapper 0 and 1.
 
-## Status & Features
+## TODO
 
 - [x] **iNES Format Parsing**: Header validation, Mapper ID extraction, PRG/CHR ROM loading.
 - [x] **CPU Core (Ricoh 2A03)**: MOS 6502 instruction decoding, address modes, and interrupt handling.
