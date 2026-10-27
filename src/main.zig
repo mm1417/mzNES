@@ -76,7 +76,8 @@ pub fn main(init: std.process.Init) !void {
 
     var bus = bus_mod.Bus.init(&cart);
     var cpu = cpu_mod.CPU.init(&bus);
-    const ppu = ppu_mod.PPU.init(&cart);
+    var ppu = ppu_mod.PPU.init(&cart);
+
     ppu_mod.renderBackground(&ppu, &framebuffer);
 
     cpu.reset();

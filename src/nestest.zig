@@ -113,3 +113,26 @@ test "ppu reg" {
     try std.testing.expectEqual(@as(u8, 0x22), bus.read(0x2007));
     std.debug.print("address is {X:0>2}\n", .{bus.ppu.ppu_addr});
 }
+
+test "ppu attr" {
+    // create allocator
+    const allocator = std.testing.allocator;
+    // create IO
+    var threaded: std.Io.Threaded = .init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var cart = try cartridge.loadCartridge(io, allocator, "roms/SMB.nes");
+    defer cart.deinit(allocator);
+    var bus = bus_mod.Bus.init(&cart);
+    bus.write(0x2006, 0x23);
+    bus.write(0x2006, 0xC0);
+    bus.write(0x2007, 0x9C);
+
+    const result1 = ppu_mod.getBackgroundPaletteID(&bus.ppu, 0, 0);
+    const result2 = ppu_mod.getBackgroundPaletteID(&bus.ppu, 2, 0);
+    const result3 = ppu_mod.getBackgroundPaletteID(&bus.ppu, 0, 2);
+    const result4 = ppu_mod.getBackgroundPaletteID(&bus.ppu, 2, 2);
+
+    std.debug.print("{any}\n{any}\n{any}\n{any}\n", .{ result1, result2, result3, result4 });
+}
