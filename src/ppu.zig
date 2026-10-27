@@ -1,14 +1,18 @@
 const std = @import("std");
 const cartridge_mod = @import("cartridge.zig");
 
+const MEM_MAP_8MASK: u8 = 0x3F;
+const MEM_MAP_16MASK: u16 = 0x3FFF;
+
 const VER_MASK: u16 = 0x07FF; // 2Kb
 const HOR_MASK: u16 = 0x03FF; // 1Kb
 const HOR_OFFSET: u16 = 0x0400;
 const PALETTE_START_ADDR: u16 = 0x3F00;
 const PALETTE_MASK: u16 = 0x001F; // 32bytes
-const MEM_MAP_8MASK: u8 = 0x3F;
-const MEM_MAP_16MASK: u16 = 0x3FFF;
 const ATTRIBUTE_START_ADDR: u16 = 0x23C0; // after nametable 0
+
+const MAX_DOT: u16 = 341;
+const MAX_SCANLINE: i16 = 262;
 
 const NES_PALETTE = [64]u32{
     0xFF666666, 0xFF002A88, 0xFF1412A7, 0xFF3B00A4,
@@ -35,6 +39,7 @@ const NES_PALETTE = [64]u32{
 pub const PPU = struct {
     vram: [2048]u8 = undefined,
     palette_ram: [32]u8 = undefined,
+    oam: [256]u8 = undefined,
     cartridge: *const cartridge_mod.Cartridge,
 
     ctrl: u8 = 0,
@@ -53,12 +58,17 @@ pub const PPU = struct {
 
     databuffer: u8 = 0,
 
+    dot: u16 = 0,
+    scanline: i16 = 0,
+    nmi_pending: bool = false,
+
     pub fn init(ctrd: *const cartridge_mod.Cartridge) PPU {
         var ppu = PPU{
             .cartridge = ctrd,
         };
         @memset(&ppu.vram, 0);
         @memset(&ppu.palette_ram, 0);
+        @memset(&ppu.oam, 0);
 
         // ===== testing =====
         ppu.writeRam(0x3F00, 0x0F);
@@ -71,6 +81,31 @@ pub const PPU = struct {
         // ===== testing =====
 
         return ppu;
+    }
+
+    pub fn step(self: *PPU) void {
+        // scanline 0-239    可见区域，PPU 在画像素
+        // scanline 240      Post-render
+        // scanline 241-260  VBlank
+        // scanline 261      Pre-render 扫描线（为下一帧准备）
+        self.dot += 1;
+        if (self.dot >= MAX_DOT) {
+            self.dot = 0;
+            self.scanline += 1;
+            if (self.dot == 1 and self.scanline == 241) {
+                self.status |= 0b1000_0000; // enable VBlank bit (7th bit)
+                if (self.ctrl & 0b1000_0000 != 0) {
+                    self.nmi_pending = true;
+                }
+            }
+            if (self.dot == 1 and self.scanline == 261) {
+                self.status &= 0b0111_1111; // clear VBlank bit (7th bit)
+            }
+
+            if (self.scanline >= MAX_SCANLINE) {
+                self.scanline = 0;
+            }
+        }
     }
 
     pub fn readRam(self: *const PPU, addr: u16) u8 {
@@ -250,12 +285,12 @@ pub fn renderBackground(ppu: *PPU, fb: *[256 * 240]u32) void {
             for (0..64) |i| {
                 var palette_addr: u16 = undefined;
                 if (decoded_tile[i] == 0) {
-                    palette_addr = PALETTE_START_ADDR;
+                    palette_addr = 0;
                 } else {
-                    palette_addr = PALETTE_START_ADDR + palette_id * 4 + @as(u16, decoded_tile[i]);
+                    palette_addr = palette_id * 4 + @as(u16, decoded_tile[i]);
                 }
 
-                const nes_color_index = ppu.palette_ram[palette_addr & 0x1F];
+                const nes_color_index = ppu.palette_ram[palette_addr];
                 colored_tile[i] = NES_PALETTE[nes_color_index];
             }
 

@@ -241,9 +241,19 @@ pub const CPU = struct {
         );
     }
 
-    pub fn step(self: *CPU) !void {
-        const pc_before = self.pc;
+    pub fn handleNmi(self: *CPU, bus: *Bus) void {
+        _ = bus;
+        _ = self;
+    }
 
+    pub fn step(self: *CPU, bus: *Bus) !void {
+        if (bus.ppu.nmi_pending) {
+            bus.ppu.nmi_pending = false;
+            self.handleNmi();
+            return;
+        }
+
+        const pc_before = self.pc;
         const code = self.fetchByte();
         const ins = decode(code) catch |err| {
             std.debug.print("DECODE FAILED: PC=${X:0>4}, OPCODE=${X:0>2}, CYC:{d}\n", .{ pc_before, code, self.cycles });
