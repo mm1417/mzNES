@@ -136,3 +136,40 @@ test "ppu attr" {
 
     std.debug.print("{any}\n{any}\n{any}\n{any}\n", .{ result1, result2, result3, result4 });
 }
+
+test "ppu step" {
+    // create allocator
+    const allocator = std.testing.allocator;
+    // create IO
+    var threaded: std.Io.Threaded = .init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var cart = try cartridge.loadCartridge(io, allocator, "roms/SMB.nes");
+    defer cart.deinit(allocator);
+    var bus = bus_mod.Bus.init(&cart);
+    var cpu = cpu_mod.CPU.init(&bus);
+    cpu.handleNmi();
+    std.debug.print("pc: {X:0>4}\n", .{cpu.pc});
+    std.debug.print("sp: {X:0>4}\n", .{cpu.sp});
+    std.debug.print("cycles: {d}\n\n", .{cpu.cycles});
+
+    bus.write(0x2000, 0x80);
+    for (0..241 * 341 + 1) |_| {
+        bus.ppu.step();
+    }
+    std.debug.print("ppu status: {b:0>8}\n", .{bus.ppu.status});
+    std.debug.print("ppu ctrl: {b:0>8}\n", .{bus.ppu.ctrl});
+    std.debug.print("ppu nmi: {any}\n", .{bus.ppu.nmi_pending});
+    std.debug.print("ppu dot: {d}\n", .{bus.ppu.dot});
+    std.debug.print("ppu scanlines: {d}\n", .{bus.ppu.scanline});
+
+    for (0..30 * 341) |_| {
+        bus.ppu.step();
+    }
+    std.debug.print("\n\nppu status: {b:0>8}\n", .{bus.ppu.status});
+    std.debug.print("ppu ctrl: {b:0>8}\n", .{bus.ppu.ctrl});
+    std.debug.print("ppu nmi: {any}\n", .{bus.ppu.nmi_pending});
+    std.debug.print("ppu dot: {d}\n", .{bus.ppu.dot});
+    std.debug.print("ppu scanlines: {d}\n", .{bus.ppu.scanline});
+}

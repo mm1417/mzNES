@@ -25,8 +25,6 @@ fn drawTextPattern(buf: []u32, frame_count: u32) void {
     }
 }
 
-// fn drawTile(buf: []u8) void {}
-
 fn showTileMap(tile: []const u8) [64 * 512]u32 {
     const tile_count = tile.len / 16;
     var flat_arr: [64 * 512]u3 = undefined;
@@ -76,15 +74,14 @@ pub fn main(init: std.process.Init) !void {
 
     var bus = bus_mod.Bus.init(&cart);
     var cpu = cpu_mod.CPU.init(&bus);
-    var ppu = ppu_mod.PPU.init(&cart);
-
-    ppu_mod.renderBackground(&ppu, &framebuffer);
 
     cpu.reset();
-    const chr_exam: []const u8 = bus.cartridge.chr_rom;
-    // std.debug.print("{any}", .{chr_exam});
-    // std.debug.dumpHex(chr_exam);
-    _ = showTileMap(chr_exam);
+
+    // ===== test =====
+    // ppu_mod.renderBackground(&ppu, &framebuffer);
+    // const chr_exam: []const u8 = bus.cartridge.chr_rom;
+    // _ = showTileMap(chr_exam);
+    // ----- test -----
 
     // ======== 初始化SDL ========
     if (!sdl.SDL_Init(sdl.SDL_INIT_VIDEO)) {
@@ -123,11 +120,6 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        // -------- SDL event --------
-        // _ = sdl.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-        // drawTextPattern(&framebuffer, frame);
-        // frame += 1;
-
         // !!IMPORTANT!! 数据类型必须是f32！
         const DST = struct {
             x: f32 = 0,
@@ -141,12 +133,35 @@ pub fn main(init: std.process.Init) !void {
         };
         const dst = DST{};
 
-        _ = sdl.SDL_UpdateTexture(texture, null, &framebuffer, SCREEN_WIDTH * @sizeOf(u32));
-        _ = sdl.SDL_RenderClear(renderer);
-        _ = sdl.SDL_RenderTexture(renderer, texture, null, &dst);
-        _ = sdl.SDL_RenderPresent(renderer);
+        // ----- step -----
+        const before_cycles = cpu.cycles;
+        try cpu.step();
+        const used_cycles = cpu.cycles - before_cycles;
+        for (0..used_cycles * 3) |_| {
+            bus.ppu.step();
+        }
 
-        sdl.SDL_Delay(16);
+        if (bus.ppu.nmi_pending) {
+            bus.ppu.nmi_pending = false;
+            const nmi_before = cpu.cycles;
+            cpu.handleNmi();
+            const nmi_used = cpu.cycles - nmi_before;
+            for (0..nmi_used * 3) |_| {
+                bus.ppu.step();
+            }
+        }
+
+        if (bus.ppu.frame_complete) {
+            bus.ppu.frame_complete = false;
+            ppu_mod.renderBackground(&bus.ppu, &framebuffer);
+
+            _ = sdl.SDL_UpdateTexture(texture, null, &framebuffer, SCREEN_WIDTH * @sizeOf(u32));
+            _ = sdl.SDL_RenderClear(renderer);
+            _ = sdl.SDL_RenderTexture(renderer, texture, null, &dst);
+            _ = sdl.SDL_RenderPresent(renderer);
+        }
+
+        // sdl.SDL_Delay(16);
     }
     // -------- main loop here --------
 }

@@ -165,7 +165,7 @@ pub const CPU = struct {
         const reset_low = self.bus.read(0xFFFC);
         const reset_high = self.bus.read(0xFFFD);
         _ = readU16LE(reset_low, reset_high);
-        self.pc = 0x0000;
+        self.pc = 0x8000;
     }
 
     pub fn fetchByte(self: *CPU) u8 {
@@ -241,18 +241,19 @@ pub const CPU = struct {
         );
     }
 
-    pub fn handleNmi(self: *CPU, bus: *Bus) void {
-        _ = bus;
-        _ = self;
+    pub fn handleNmi(self: *CPU) void {
+        self.pushStack(@truncate(self.pc >> 8));
+        self.pushStack(@truncate(self.pc));
+
+        const status = (self.status & ~Flags.Break) | Flags.Unused;
+        self.pushStack(status);
+        self.setFlag(Flags.InterruptDisable, true);
+
+        self.pc = readU16LE(self.bus.read(0xFFFA), self.bus.read(0xFFFB));
+        self.cycles += 7;
     }
 
-    pub fn step(self: *CPU, bus: *Bus) !void {
-        if (bus.ppu.nmi_pending) {
-            bus.ppu.nmi_pending = false;
-            self.handleNmi();
-            return;
-        }
-
+    pub fn step(self: *CPU) !void {
         const pc_before = self.pc;
         const code = self.fetchByte();
         const ins = decode(code) catch |err| {

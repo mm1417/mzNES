@@ -58,9 +58,10 @@ pub const PPU = struct {
 
     databuffer: u8 = 0,
 
-    dot: u16 = 0,
-    scanline: i16 = 0,
+    dot: u16 = 0, // 341 max (0..340)
+    scanline: i16 = 0, // 262 max (0..261)
     nmi_pending: bool = false,
+    frame_complete: bool = false,
 
     pub fn init(ctrd: *const cartridge_mod.Cartridge) PPU {
         var ppu = PPU{
@@ -89,21 +90,26 @@ pub const PPU = struct {
         // scanline 241-260  VBlank
         // scanline 261      Pre-render 扫描线（为下一帧准备）
         self.dot += 1;
+
+        if (self.dot == 1 and self.scanline == 241) {
+            self.status |= 0b1000_0000; // enable VBlank bit (7th bit)
+            if (self.ctrl & 0b1000_0000 != 0) {
+                self.nmi_pending = true;
+                // std.debug.print("enter NMI\n", .{});
+            }
+            // std.debug.print("===== enter VBlank =====\n", .{});
+        }
+        if (self.dot == 1 and self.scanline == 261) {
+            self.status &= 0b0111_1111; // clear VBlank bit (7th bit)
+        }
+
         if (self.dot >= MAX_DOT) {
             self.dot = 0;
             self.scanline += 1;
-            if (self.dot == 1 and self.scanline == 241) {
-                self.status |= 0b1000_0000; // enable VBlank bit (7th bit)
-                if (self.ctrl & 0b1000_0000 != 0) {
-                    self.nmi_pending = true;
-                }
-            }
-            if (self.dot == 1 and self.scanline == 261) {
-                self.status &= 0b0111_1111; // clear VBlank bit (7th bit)
-            }
 
             if (self.scanline >= MAX_SCANLINE) {
                 self.scanline = 0;
+                self.frame_complete = true;
             }
         }
     }
@@ -111,7 +117,7 @@ pub const PPU = struct {
     pub fn readRam(self: *const PPU, addr: u16) u8 {
         const re_addr = resolve_addr(self, addr);
         switch (addr) {
-            0x0000...0x1FFF => return self.cartridge.ppuRead(re_addr),
+            0x0000...0x1FFF => return self.cartridge.ppuRead(addr),
             0x2000...0x3EFF => return self.vram[re_addr],
             0x3F00...0x3FFF => return self.palette_ram[re_addr],
             else => return 0,
