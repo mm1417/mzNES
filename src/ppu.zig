@@ -40,6 +40,7 @@ pub const PPU = struct {
     vram: [2048]u8 = undefined,
     palette_ram: [32]u8 = undefined,
     oam: [256]u8 = undefined,
+    oam_addr: u8 = 0,
     cartridge: *const cartridge_mod.Cartridge,
 
     ctrl: u8 = 0,
@@ -142,6 +143,8 @@ pub const PPU = struct {
                 self.addr_latch = false;
                 return value;
             },
+            0x2003 => return self.oam_addr,
+            0x2004 => return self.oam[self.oam_addr],
             0x2007 => {
                 const addr_tmp = self.ppu_addr;
                 const value = self.readRam(self.ppu_addr);
@@ -173,6 +176,11 @@ pub const PPU = struct {
                 }
             },
             0x2001 => self.mask = value,
+            0x2003 => self.oam_addr = value,
+            0x2004 => {
+                self.oam[self.oam_addr] = value;
+                self.oam_addr +%= 1;
+            },
             0x2005 => {
                 if (self.addr_latch == false) {
                     self.scroll_x = value;
