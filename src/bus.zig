@@ -54,10 +54,10 @@ pub const Bus = struct {
             // PPU registers with mirrors
             0x2000...0x3FFF => self.ppu.cpuWrite(addr & PPU_REG_MASK, value),
 
-            // OAM DMA 必须写在前边，因为switch是顺序检查
+            // OAM DMA, excluded it from APU/IO range
             0x4014 => self.oamDMA(value),
 
-            // APU and IO
+            // APU/IO
             0x4000...0x4013 => {},
             0x4015...0x4017 => {},
 
@@ -70,8 +70,13 @@ pub const Bus = struct {
     }
 
     pub fn oamDMA(self: *Bus, value: u8) void {
-        const addr: u16 = @as(u16, value) << 8;
-        const src_slice: []const u8 = self.ram.oamRead(addr);
-        @memcpy(&self.ppu.oam, src_slice);
+        const base: u16 = @as(u16, value) << 8;
+        // oam内存从oam当前地址开始往后填满256 bytes，而不是从0开始！！
+        for (0..256) |i| {
+            const addr = base + @as(u16, @intCast(i));
+            const data = self.read(addr);
+            self.ppu.oam[self.ppu.oam_addr] = data;
+            self.ppu.oam_addr +%= 1;
+        }
     }
 };

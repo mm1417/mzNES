@@ -14,9 +14,4 @@ pub const Memory = struct {
     pub fn write(self: *Memory, addr: u16, value: u8) void {
         self.data[addr] = value;
     }
-
-    // const切片不能返回可变切片！！！
-    pub fn oamRead(self: *const Memory, addr: u16) []const u8 {
-        return self.data[addr .. addr + 256];
-    }
 };
