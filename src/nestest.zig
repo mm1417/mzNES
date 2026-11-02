@@ -173,3 +173,28 @@ test "ppu step" {
     std.debug.print("ppu dot: {d}\n", .{bus.ppu.dot});
     std.debug.print("ppu scanlines: {d}\n", .{bus.ppu.scanline});
 }
+
+test "ppu oam" {
+    // create allocator
+    const allocator = std.testing.allocator;
+    // create IO
+    var threaded: std.Io.Threaded = .init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var cart = try cartridge.loadCartridge(io, allocator, "roms/SMB.nes");
+    defer cart.deinit(allocator);
+    var bus = bus_mod.Bus.init(&cart);
+
+    bus.write(0x0200, 0x11);
+    bus.write(0x0201, 0x22);
+    bus.write(0x0202, 0x33);
+    bus.write(0x0203, 0x44);
+
+    bus.write(0x4014, 0x02);
+
+    std.debug.print("OAM[0]: {X:0>2}\n", .{bus.ppu.oam[0]});
+    std.debug.print("OAM[1]: {X:0>2}\n", .{bus.ppu.oam[1]});
+    std.debug.print("OAM[2]: {X:0>2}\n", .{bus.ppu.oam[2]});
+    std.debug.print("OAM[3]: {X:0>2}\n", .{bus.ppu.oam[3]});
+}
