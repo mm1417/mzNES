@@ -8,6 +8,7 @@ const VER_MASK: u16 = 0x07FF; // 2Kb
 const HOR_MASK: u16 = 0x03FF; // 1Kb
 const HOR_OFFSET: u16 = 0x0400;
 const PALETTE_START_ADDR: u16 = 0x3F00;
+const S_PALETTE_START_ADDR: u16 = 0x3F10;
 const PALETTE_MASK: u16 = 0x001F; // 32bytes
 const ATTRIBUTE_START_ADDR: u16 = 0x23C0; // after nametable 0
 
@@ -73,13 +74,13 @@ pub const PPU = struct {
         @memset(&ppu.oam, 0);
 
         // ===== testing =====
-        ppu.writeRam(0x3F00, 0x0F);
-        ppu.writeRam(0x3F01, 0x16);
-        ppu.writeRam(0x3F02, 0x27);
-        ppu.writeRam(0x3F03, 0x30);
-        ppu.writeRam(0x3F05, 0x12);
-        ppu.writeRam(0x3F06, 0x22);
-        ppu.writeRam(0x3F07, 0x32);
+        // ppu.writeRam(0x3F00, 0x0F);
+        // ppu.writeRam(0x3F01, 0x16);
+        // ppu.writeRam(0x3F02, 0x27);
+        // ppu.writeRam(0x3F03, 0x30);
+        // ppu.writeRam(0x3F05, 0x12);
+        // ppu.writeRam(0x3F06, 0x22);
+        // ppu.writeRam(0x3F07, 0x32);
         // ===== testing =====
 
         return ppu;
@@ -94,6 +95,8 @@ pub const PPU = struct {
 
         if (self.dot == 1 and self.scanline == 241) {
             self.status |= 0b1000_0000; // enable VBlank bit (7th bit)
+            self.status |= 0b0100_0000; // TMEP: enable 0 hit bit (6th bit)
+
             if (self.ctrl & 0b1000_0000 != 0) {
                 self.nmi_pending = true;
                 // std.debug.print("enter NMI\n", .{});
@@ -101,7 +104,8 @@ pub const PPU = struct {
             // std.debug.print("===== enter VBlank =====\n", .{});
         }
         if (self.dot == 1 and self.scanline == 261) {
-            self.status &= 0b0111_1111; // clear VBlank bit (7th bit)
+            // self.status &= 0b0111_1111; // clear VBlank (7th)
+            self.status &= 0b0001_1111; // TEMP: clear VBlank (7th), 0 Hit(6th), Sprite Overflow(5th)
         }
 
         if (self.dot >= MAX_DOT) {
@@ -344,4 +348,95 @@ pub fn getBackgroundPaletteID(ppu: *const PPU, tile_x: u8, tile_y: u8) u8 {
     const shift = (local_x / 2) * 2 + (local_y / 2) * 4;
 
     return (attr >> @intCast(shift)) & 0b11;
+}
+
+pub fn renderSprite(ppu: *PPU, fb: *[256 * 240]u32) void {
+    // maximum 64 sprites per screen
+    var sprite_index: usize = 64;
+    while (sprite_index > 0) : (sprite_index -= 1) {
+        const base = sprite_index * 4;
+        const y = ppu.oam[base - 4];
+        const tile_index = ppu.oam[base - 3];
+        const attribute = ppu.oam[base - 2];
+        const x = ppu.oam[base - 1];
+
+        // ===== DEBUG =====
+        // if (y < 0xEF) {
+        //     std.debug.print(
+        //         "sprite {d}: Y={X:0>2} T={X:0>2} A={X:0>2} X={X:0>2}\n",
+        //         .{ sprite_index - 1, y, tile_index, attribute, x },
+        //     );
+        // }
+
+        // 处理attribute
+        const flip_v = attribute & 0b1000_0000 != 0;
+        const flip_h = attribute & 0b0100_0000 != 0;
+        const palette_id = attribute & 0b0000_0011;
+
+        // 处理tile_index，找到tile的16bytes
+        const pattern_base: u16 = @as(u16, (ppu.ctrl >> 3) & 0x01) * 0x1000;
+        const tile_addr: u16 = pattern_base + @as(u16, tile_index) * 16;
+
+        var tile_arr: [16]u8 = undefined;
+        for (0..16) |i| {
+            // i是usize类型，@as不做类型检查！！！
+            tile_arr[i] = ppu.readRam(tile_addr + @as(u16, @intCast(i)));
+        }
+        const decoded_tile = decodeTile(&tile_arr);
+
+        // ===== DEBUG =====
+        // if (sprite_index == 1) {
+        //     var visible_pixels: usize = 0;
+
+        //     for (decoded_tile) |pixel| {
+        //         if (pixel != 0) {
+        //             visible_pixels += 1;
+        //         }
+        //     }
+
+        //     std.debug.print(
+        //         \\===== SPRITE 0 DEBUG =====
+        //         \\PPUCTRL: {b:0>8}
+        //         \\PPUMASK: {b:0>8}
+        //         \\Sprite size: {s}
+        //         \\Pattern base: ${X:0>4}
+        //         \\Tile address: ${X:0>4}
+        //         \\Visible pixels: {d}/64
+        //         \\Palette: {X:0>2} {X:0>2} {X:0>2}
+        //         \\
+        //     , .{
+        //         ppu.ctrl,
+        //         ppu.mask,
+        //         if (ppu.ctrl & 0x20 != 0) "8x16" else "8x8",
+        //         pattern_base,
+        //         tile_addr,
+        //         visible_pixels,
+        //         ppu.readRam(0x3F1D),
+        //         ppu.readRam(0x3F1E),
+        //         ppu.readRam(0x3F1F),
+        //     });
+        // }
+
+        for (0..8) |pixel_y| {
+            for (0..8) |pixel_x| {
+                const src_x =
+                    if (flip_h) 7 - pixel_x else pixel_x;
+
+                const src_y =
+                    if (flip_v) 7 - pixel_y else pixel_y;
+
+                const pixel = decoded_tile[src_y * 8 + src_x];
+                if (pixel == 0) continue;
+                const palette_addr = S_PALETTE_START_ADDR + @as(u16, palette_id) * 4 + @as(u16, pixel);
+                const color_index = ppu.readRam(palette_addr) & 0x3F;
+
+                const screen_x = @as(usize, x) + pixel_x;
+                const screen_y = @as(usize, y) + 1 + pixel_y;
+                if (screen_x >= 256 or screen_y >= 240) continue;
+
+                const framebuffer_index = screen_y * 256 + screen_x;
+                fb[framebuffer_index] = NES_PALETTE[color_index];
+            }
+        }
+    }
 }

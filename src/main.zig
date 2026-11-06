@@ -154,14 +154,14 @@ pub fn main(init: std.process.Init) !void {
         if (bus.ppu.frame_complete) {
             bus.ppu.frame_complete = false;
             ppu_mod.renderBackground(&bus.ppu, &framebuffer);
+            ppu_mod.renderSprite(&bus.ppu, &framebuffer);
 
             _ = sdl.SDL_UpdateTexture(texture, null, &framebuffer, SCREEN_WIDTH * @sizeOf(u32));
             _ = sdl.SDL_RenderClear(renderer);
             _ = sdl.SDL_RenderTexture(renderer, texture, null, &dst);
             _ = sdl.SDL_RenderPresent(renderer);
+            sdl.SDL_Delay(4);
         }
-
-        // sdl.SDL_Delay(16);
     }
     // -------- main loop here --------
 }
