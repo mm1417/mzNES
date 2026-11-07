@@ -201,3 +201,38 @@ test "ppu oam" {
     try std.testing.expectEqual(@as(u8, 0x22), bus.ppu.oam[0xFF]);
     try std.testing.expectEqual(@as(u8, 0x33), bus.ppu.oam[0x00]);
 }
+
+test "ppu loopy" {
+    // create allocator
+    const allocator = std.testing.allocator;
+    // create IO
+    var threaded: std.Io.Threaded = .init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var cart = try cartridge.loadCartridge(io, allocator, "roms/SMB.nes");
+    defer cart.deinit(allocator);
+    var bus = bus_mod.Bus.init(&cart);
+
+    // Select nametable 3
+    bus.write(0x2000, 0x03);
+
+    // Horizontal scroll
+    bus.write(0x2005, 0x2D);
+    std.debug.print("fine_x: {X:0>2}\n", .{bus.ppu.fine_x});
+    std.debug.print("t: {X:0>2}\n", .{bus.ppu.t});
+
+    try std.testing.expectEqual(@as(u3, 5), bus.ppu.fine_x);
+    try std.testing.expectEqual(@as(u16, 3), (bus.ppu.t >> 10) & 0x03);
+
+    // Vertical scroll
+    bus.write(0x2005, 0x6B);
+    try std.testing.expectEqual(@as(u16, 5), bus.ppu.t & 0x1F);
+    try std.testing.expectEqual(@as(u16, 13), (bus.ppu.t >> 5) & 0x1F);
+    try std.testing.expectEqual(@as(u16, 3), (bus.ppu.t >> 12) & 0x07);
+
+    bus.write(0x2006, 0x3F);
+    bus.write(0x2006, 0x00);
+
+    try std.testing.expectEqual(@as(u16, 0x3F00), bus.ppu.v);
+}

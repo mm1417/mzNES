@@ -160,7 +160,7 @@ pub fn main(init: std.process.Init) !void {
             _ = sdl.SDL_RenderClear(renderer);
             _ = sdl.SDL_RenderTexture(renderer, texture, null, &dst);
             _ = sdl.SDL_RenderPresent(renderer);
-            sdl.SDL_Delay(4);
+            sdl.SDL_Delay(3);
         }
     }
     // -------- main loop here --------

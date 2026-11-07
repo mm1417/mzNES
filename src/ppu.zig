@@ -1,7 +1,6 @@
 const std = @import("std");
 const cartridge_mod = @import("cartridge.zig");
 
-const MEM_MAP_8MASK: u8 = 0x3F;
 const MEM_MAP_16MASK: u16 = 0x3FFF;
 
 const VER_MASK: u16 = 0x07FF; // 2Kb
@@ -48,15 +47,16 @@ pub const PPU = struct {
     mask: u8 = 0,
     status: u8 = 0,
 
+    // loopy registers
+    v: u16 = 0, // current VRAM addr, 15bits
+    t: u16 = 0, // temp VRAM addr, 15bits
+    fine_x: u3 = 0, // fine X scroll, 3bits
+    write_toggle: bool = false, // write toggle
+
+    vram_step: u8 = 1,
+
     scroll_x: u8 = 0,
     scroll_y: u8 = 0,
-
-    ppu_addr: u16 = 0,
-    ppu_addr_hi: u8 = 0,
-    ppu_addr_lo: u8 = 0,
-    ppu_addr_step: u8 = 1,
-
-    addr_latch: bool = false,
 
     databuffer: u8 = 0,
 
@@ -144,16 +144,16 @@ pub const PPU = struct {
             0x2002 => {
                 const value = self.status;
                 self.status &= 0b0111_1111; // clear VBlank bit (7th bit)
-                self.addr_latch = false;
+                self.write_toggle = false;
                 return value;
             },
             0x2003 => return self.oam_addr,
             0x2004 => return self.oam[self.oam_addr],
             0x2007 => {
-                const addr_tmp = self.ppu_addr;
-                const value = self.readRam(self.ppu_addr);
-                self.ppu_addr +%= self.ppu_addr_step;
-                self.ppu_addr &= MEM_MAP_16MASK;
+                const addr_tmp = self.v & 0x3FFF;
+                const value = self.readRam(addr_tmp);
+                self.v +%= self.vram_step;
+                self.v &= MEM_MAP_16MASK;
 
                 if (addr_tmp >= PALETTE_START_ADDR) {
                     return value;
@@ -174,10 +174,13 @@ pub const PPU = struct {
                 self.ctrl = value;
                 // check VRAM increment
                 if (self.ctrl & 0b0000_0100 != 0) {
-                    self.ppu_addr_step = 32;
+                    self.vram_step = 32;
                 } else {
-                    self.ppu_addr_step = 1;
+                    self.vram_step = 1;
                 }
+
+                // set register t nametalbe, bit 10-11
+                self.t = (self.t & 0b1111_0011_1111_1111) | (@as(u16, value & 0x03) << 10);
             },
             0x2001 => self.mask = value,
             0x2003 => self.oam_addr = value,
@@ -186,28 +189,38 @@ pub const PPU = struct {
                 self.oam_addr +%= 1;
             },
             0x2005 => {
-                if (self.addr_latch == false) {
-                    self.scroll_x = value;
-                    self.addr_latch = true;
+                if (self.write_toggle == false) {
+                    // 第一次写入 coarse x (5位，且最高位是0)
+                    self.t = (self.t & 0b0111_1111_1110_0000) | @as(u16, value >> 3);
+                    // 第一次写入 fine x (单独寄存器，3位)
+                    self.fine_x = @truncate(value & 0b111);
+                    self.write_toggle = true;
                 } else {
-                    self.scroll_y = value;
-                    self.addr_latch = false;
+                    // 第二次写入 coarse y (5位，且最高位是0)
+                    self.t =
+                        (self.t & 0b0111_1100_0001_1111) |
+                        @as(u16, value & 0b1111_1000) << 2 |
+                        // fine y
+                        @as(u16, value & 0b0000_0111) << 12;
+                    self.write_toggle = false;
                 }
             },
             0x2006 => {
-                if (self.addr_latch == false) {
-                    self.ppu_addr_hi = value & MEM_MAP_8MASK;
-                    self.addr_latch = true;
+                if (self.write_toggle == false) {
+                    // 先写入高8位，PPU寻址最多14位，所以最高2位是0
+                    self.t = (self.t & 0x00FF) | (@as(u16, value & 0b0011_1111) << 8);
+                    self.write_toggle = true;
                 } else {
-                    self.ppu_addr_lo = value;
-                    self.addr_latch = false;
+                    // 再写入低8位
+                    self.t = (self.t & 0xFF00) | @as(u16, value);
+                    self.v = self.t;
+                    self.write_toggle = false;
                 }
-                self.ppu_addr = (@as(u16, self.ppu_addr_hi) << 8) | (@as(u16, self.ppu_addr_lo));
             },
             0x2007 => {
-                self.writeRam(self.ppu_addr, value);
-                self.ppu_addr +%= self.ppu_addr_step;
-                self.ppu_addr &= MEM_MAP_16MASK;
+                self.writeRam(self.v & 0x3FFF, value);
+                self.v +%= self.vram_step;
+                self.v &= MEM_MAP_16MASK;
             },
             else => {},
         }
@@ -440,3 +453,5 @@ pub fn renderSprite(ppu: *PPU, fb: *[256 * 240]u32) void {
         }
     }
 }
+
+pub fn renderScanline(ppu: *PPU, fb: [256 * 240]u32, scanline: usize) void {}
