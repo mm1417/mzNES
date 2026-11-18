@@ -139,6 +139,10 @@ pub fn main(init: std.process.Init) !void {
         const used_cycles = cpu.cycles - before_cycles;
         for (0..used_cycles * 3) |_| {
             bus.ppu.step();
+
+            if (bus.ppu.scanline_start) {
+                ppu_mod.renderScanline(&bus.ppu, &framebuffer, @intCast(bus.ppu.scanline));
+            }
         }
 
         if (bus.ppu.nmi_pending) {
@@ -148,12 +152,17 @@ pub fn main(init: std.process.Init) !void {
             const nmi_used = cpu.cycles - nmi_before;
             for (0..nmi_used * 3) |_| {
                 bus.ppu.step();
+
+                if (bus.ppu.scanline_start) {
+                    ppu_mod.renderScanline(&bus.ppu, &framebuffer, @intCast(bus.ppu.scanline));
+                }
             }
         }
 
         if (bus.ppu.frame_complete) {
             bus.ppu.frame_complete = false;
-            ppu_mod.renderBackground(&bus.ppu, &framebuffer);
+            // ppu_mod.renderBackground(&bus.ppu, &framebuffer);
+
             ppu_mod.renderSprite(&bus.ppu, &framebuffer);
 
             _ = sdl.SDL_UpdateTexture(texture, null, &framebuffer, SCREEN_WIDTH * @sizeOf(u32));

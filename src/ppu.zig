@@ -9,7 +9,7 @@ const HOR_OFFSET: u16 = 0x0400;
 const PALETTE_START_ADDR: u16 = 0x3F00;
 const S_PALETTE_START_ADDR: u16 = 0x3F10;
 const PALETTE_MASK: u16 = 0x001F; // 32bytes
-const ATTRIBUTE_START_ADDR: u16 = 0x23C0; // after nametable 0
+const ATTRIBUTE_OFFSET: u16 = 0x03C0; // after nametable 0
 
 const MAX_DOT: u16 = 341;
 const MAX_SCANLINE: i16 = 262;
@@ -55,15 +55,13 @@ pub const PPU = struct {
 
     vram_step: u8 = 1,
 
-    scroll_x: u8 = 0,
-    scroll_y: u8 = 0,
-
     databuffer: u8 = 0,
 
     dot: u16 = 0, // 341 max (0..340)
     scanline: i16 = 0, // 262 max (0..261)
     nmi_pending: bool = false,
     frame_complete: bool = false,
+    scanline_start: bool = false,
 
     pub fn init(ctrd: *const cartridge_mod.Cartridge) PPU {
         var ppu = PPU{
@@ -86,13 +84,53 @@ pub const PPU = struct {
         return ppu;
     }
 
+    fn renderingEnabled(self: *const PPU) bool {
+        return self.mask & 0x18 != 0;
+    }
+
+    fn copyHorizontal(self: *PPU) void {
+        self.v = (self.v & 0x7BE0) | (self.t & 0x041F);
+    }
+
+    fn copyVertical(self: *PPU) void {
+        self.v = (self.v & 0x041F) | (self.t & 0x7BE0);
+    }
+
     pub fn step(self: *PPU) void {
         // scanline 0-239    可见区域，PPU 在画像素
         // scanline 240      Post-render
         // scanline 241-260  VBlank
         // scanline 261      Pre-render 扫描线（为下一帧准备）
+        self.scanline_start = false;
         self.dot += 1;
 
+        // 当前可见扫描线开始
+        if (self.dot == 1 and self.scanline < 240) {
+            self.scanline_start = true;
+        }
+
+        // visible / pre-render timing
+        if (self.renderingEnabled()) {
+
+            // 当前行结束时推进 vertical scroll
+            if (self.scanline < 240 and self.dot == 256) {
+                incrementY(self);
+            }
+
+            // 为下一行恢复 horizontal scroll
+            if ((self.scanline < 240 or self.scanline == 261) and
+                self.dot == 257)
+            {
+                self.copyHorizontal();
+            }
+
+            // 为下一帧恢复 vertical scroll
+            if (self.scanline == 261 and self.dot == 280) {
+                self.copyVertical();
+            }
+        }
+
+        // VBlank
         if (self.dot == 1 and self.scanline == 241) {
             self.status |= 0b1000_0000; // enable VBlank bit (7th bit)
             self.status |= 0b0100_0000; // TMEP: enable 0 hit bit (6th bit)
@@ -103,9 +141,15 @@ pub const PPU = struct {
             }
             // std.debug.print("===== enter VBlank =====\n", .{});
         }
+
+        // Pre-render
         if (self.dot == 1 and self.scanline == 261) {
             // self.status &= 0b0111_1111; // clear VBlank (7th)
             self.status &= 0b0001_1111; // TEMP: clear VBlank (7th), 0 Hit(6th), Sprite Overflow(5th)
+        }
+
+        if (self.dot == 280 and self.scanline == 261) {
+            // copy vertical scroll:
         }
 
         if (self.dot >= MAX_DOT) {
@@ -141,27 +185,32 @@ pub const PPU = struct {
     // 给BUS的外部API
     pub fn cpuRead(self: *PPU, addr: u16) u8 {
         switch (addr) {
+            // PPUSTATUS
             0x2002 => {
                 const value = self.status;
                 self.status &= 0b0111_1111; // clear VBlank bit (7th bit)
                 self.write_toggle = false;
                 return value;
             },
+            // OAMADDR
             0x2003 => return self.oam_addr,
+            // OAMDATA
             0x2004 => return self.oam[self.oam_addr],
+            // PPUDATA
             0x2007 => {
                 const addr_tmp = self.v & 0x3FFF;
                 const value = self.readRam(addr_tmp);
                 self.v +%= self.vram_step;
-                self.v &= MEM_MAP_16MASK;
+                self.v &= 0x7FFF;
 
+                // 如果读取调色板则不经过buffer而直接取当前值
                 if (addr_tmp >= PALETTE_START_ADDR) {
                     return value;
                 }
 
-                const value_tmp = self.databuffer;
+                const buffered_value = self.databuffer;
                 self.databuffer = value;
-                return value_tmp;
+                return buffered_value;
             },
             else => return 0,
         }
@@ -170,6 +219,7 @@ pub const PPU = struct {
     // 给BUS的外部API
     pub fn cpuWrite(self: *PPU, addr: u16, value: u8) void {
         switch (addr) {
+            // PPUCTRL
             0x2000 => {
                 self.ctrl = value;
                 // check VRAM increment
@@ -182,12 +232,16 @@ pub const PPU = struct {
                 // set register t nametalbe, bit 10-11
                 self.t = (self.t & 0b1111_0011_1111_1111) | (@as(u16, value & 0x03) << 10);
             },
+            // PPUMASK
             0x2001 => self.mask = value,
+            // OAMADDR
             0x2003 => self.oam_addr = value,
+            // OAMDATA
             0x2004 => {
                 self.oam[self.oam_addr] = value;
                 self.oam_addr +%= 1;
             },
+            // PPUSCROLL (Write x2)
             0x2005 => {
                 if (self.write_toggle == false) {
                     // 第一次写入 coarse x (5位，且最高位是0)
@@ -198,16 +252,17 @@ pub const PPU = struct {
                 } else {
                     // 第二次写入 coarse y (5位，且最高位是0)
                     self.t =
-                        (self.t & 0b0111_1100_0001_1111) |
-                        @as(u16, value & 0b1111_1000) << 2 |
+                        (self.t & 0x0C1F) |
+                        @as(u16, value & 0xF8) << 2 |
                         // fine y
-                        @as(u16, value & 0b0000_0111) << 12;
+                        @as(u16, value & 0x07) << 12;
                     self.write_toggle = false;
                 }
             },
+            // PPUADDR (Write x2)
             0x2006 => {
                 if (self.write_toggle == false) {
-                    // 先写入高8位，PPU寻址最多14位，所以最高2位是0
+                    // 先写入高8位 (PPU寻址最多14位，所以最高2位是0)
                     self.t = (self.t & 0x00FF) | (@as(u16, value & 0b0011_1111) << 8);
                     self.write_toggle = true;
                 } else {
@@ -217,10 +272,11 @@ pub const PPU = struct {
                     self.write_toggle = false;
                 }
             },
+            // PPUDATA
             0x2007 => {
                 self.writeRam(self.v & 0x3FFF, value);
                 self.v +%= self.vram_step;
-                self.v &= MEM_MAP_16MASK;
+                self.v &= 0x7FFF; // v是内部15位地址，真正需要外部寻址时PPU寻址14位 0x3FFF
             },
             else => {},
         }
@@ -312,7 +368,7 @@ pub fn renderBackground(ppu: *PPU, fb: *[256 * 240]u32) void {
             var colored_tile: [64]u32 = undefined;
 
             // 4. 找到属于第几快palette
-            const palette_id: u16 = @as(u16, getBackgroundPaletteID(ppu, @intCast(tile_x), @intCast(tile_y)));
+            const palette_id: u16 = @as(u16, getBackgroundPaletteID(ppu, 0, @intCast(tile_x), @intCast(tile_y)));
             for (0..64) |i| {
                 var palette_addr: u16 = undefined;
                 if (decoded_tile[i] == 0) {
@@ -340,13 +396,13 @@ pub fn renderBackground(ppu: *PPU, fb: *[256 * 240]u32) void {
 }
 
 // 得到这是第几组Palette
-pub fn getBackgroundPaletteID(ppu: *const PPU, tile_x: u8, tile_y: u8) u8 {
+pub fn getBackgroundPaletteID(ppu: *const PPU, nt_base: u16, tile_x: u8, tile_y: u8) u8 {
     // 4x4 个tile公用一个 attribute table
     const attribute_x = tile_x / 4;
     const attribute_y = tile_y / 4;
 
     // 一屏有 8x8 个 attribute table, 64 bytes attr_addr after nametable
-    const attribute_addr = ATTRIBUTE_START_ADDR + @as(u16, attribute_y * 8 + attribute_x);
+    const attribute_addr = nt_base + ATTRIBUTE_OFFSET + @as(u16, attribute_y * 8 + attribute_x);
 
     const attr = ppu.readRam(attribute_addr);
     const local_x = tile_x % 4;
@@ -454,4 +510,85 @@ pub fn renderSprite(ppu: *PPU, fb: *[256 * 240]u32) void {
     }
 }
 
-pub fn renderScanline(ppu: *PPU, fb: [256 * 240]u32, scanline: usize) void {}
+// render scrolling BACKGROUND
+pub fn renderScanline(ppu: *PPU, fb: *[256 * 240]u32, scanline: usize) void {
+    var coarse_x: u16 = ppu.v & 0b0001_1111;
+    const coarse_y: u16 = (ppu.v >> 5) & 0b0001_1111;
+    var nt_x: u16 = (ppu.v >> 10) & 0x01;
+    const nt_y: u16 = (ppu.v >> 11) & 0x01;
+    var fine_x: u16 = ppu.fine_x;
+    const fine_y: u16 = (ppu.v >> 12) & 0b0111;
+
+    for (0..256) |screen_x| {
+        // 当前nametable
+        const nt_index = (nt_y << 1) | nt_x; // 0 至 3
+        const nt_base: u16 = 0x2000 + nt_index * 0x400; // 0x3FF = 1023，1个字节。nt有4k，物理上有2k
+        const nt_addr = nt_base + coarse_y * 32 + coarse_x;
+        // 当前tile编号
+        const tile_index = ppu.readRam(nt_addr);
+        // 当前pattern address (PPUCTRL bit4 决定 Pattern Table)
+        const pattern_base: u16 = @as(u16, (ppu.ctrl >> 4) & 0x1) * 0x1000;
+        const tile_addr = pattern_base + @as(u16, tile_index) * 16;
+        // 只需要当前tile的这一行
+        const lo_plane = ppu.readRam(tile_addr + fine_y);
+        const hi_plane = ppu.readRam(tile_addr + fine_y + 8);
+        // 当前pixel的值
+        const bit: u3 = @intCast(7 - fine_x);
+        const lo: u1 = @truncate((lo_plane >> bit) & 0x1);
+        const hi: u1 = @truncate((hi_plane >> bit) & 0x1);
+        const pixel = (@as(u3, hi) << 1) | @as(u3, lo);
+        // 算出palette id
+        const palette_id: u16 = @as(u16, getBackgroundPaletteID(ppu, nt_base, @truncate(coarse_x), @truncate(coarse_y)));
+        var palette_addr: u16 = undefined;
+
+        if (pixel == 0) {
+            palette_addr = 0;
+        } else {
+            palette_addr = palette_id * 4 + pixel;
+        }
+        const nes_color_index = ppu.palette_ram[palette_addr] & 0x3F;
+        const colored_pixel = NES_PALETTE[nes_color_index];
+        fb[scanline * 256 + screen_x] = colored_pixel;
+
+        fine_x += 1;
+        if (fine_x == 8) {
+            fine_x = 0;
+            if (coarse_x == 31) {
+                coarse_x = 0;
+                nt_x ^= 1;
+            } else {
+                coarse_x += 1;
+            }
+        }
+    }
+}
+
+pub fn incrementY(ppu: *PPU) void {
+    // fine Y 还没有到 7
+    if ((ppu.v & 0x7000) != 0x7000) {
+        ppu.v += 0x1000;
+        return;
+    }
+
+    // fine Y: 7 -> 0
+    ppu.v &= ~@as(u16, 0x7000);
+
+    var coarse_y = (ppu.v >> 5) & 0x1F;
+
+    if (coarse_y == 29) {
+        coarse_y = 0;
+
+        // 切换 vertical nametable
+        ppu.v ^= 0x0800;
+    } else if (coarse_y == 31) {
+        coarse_y = 0;
+    } else {
+        coarse_y += 1;
+    }
+
+    // 清除旧 coarse Y
+    ppu.v &= ~@as(u16, 0x03E0);
+
+    // 写入新 coarse Y
+    ppu.v |= coarse_y << 5;
+}
